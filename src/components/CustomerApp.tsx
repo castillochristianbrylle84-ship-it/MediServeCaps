@@ -177,9 +177,12 @@ export default function CustomerApp() {
   setIsSubmitting(true);
   try {
     const now = new Date().toISOString();
-    const queueNumber = await getNextQueueNumber(form.patientType);
+    const { queueDate, queueNumber } = await getNextQueueNumber(
+      form.patientType
+    );
 
     const newId = await addQueueEntry({
+      queueDate,
       queueNumber,
       patientName: form.patientName.trim(),
       address: form.address.trim(),

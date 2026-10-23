@@ -217,3 +217,28 @@ The Admin Get Ready action sends `Hello [Customer Name] (Queue [Queue Number]), 
   "updatedAt": "Firestore Timestamp"
 }
 ```
+
+## Daily queue rollover
+
+Queue tickets are assigned a `queueDate` using the `Asia/Manila` timezone.
+The admin and customer queue listeners show entries for the current queue date
+and switch to the new date after midnight. Older tickets without `queueDate`
+remain visible on the matching day based on their `createdAt` timestamp.
+
+The `resetDailyQueue` second-generation Cloud Function runs at midnight in
+`Asia/Manila`. It archives the previous day's tickets in batches, updates their
+`orders` and patient-type mirrors, and rolls the `queue_metadata/today`
+document forward with fresh daily counters. Ticket numbers are allocated
+server-side by `/api/queue/next-number`, using the same metadata document to
+avoid a counter reset racing with a new registration.
+
+Deploy the scheduled function from the repository root after Firebase CLI is
+configured for this project:
+
+```sh
+firebase deploy --only functions:resetDailyQueue
+```
+
+The Firebase project must use the Blaze plan for scheduled functions and
+Cloud Scheduler. The function uses the Firebase Admin SDK's runtime service
+account; do not place a service-account private key in the function source.

@@ -20,10 +20,9 @@ import {
   deleteDoc,
   onSnapshot,
   query,
-  orderBy,
+  where,
   serverTimestamp,
   Timestamp,
-  runTransaction,
   type DocumentData,
   type QuerySnapshot,
   type Unsubscribe,
@@ -44,6 +43,7 @@ export interface StockItem {
 
 export interface QueueEntry {
   id: string;
+  queueDate: string;
   queueNumber: string;
   patientName: string;
   address: string;
@@ -52,7 +52,7 @@ export interface QueueEntry {
   seniorIdNumber?: string;
   medicines: string[];
   quantities: number[];
-  status: "waiting" | "processing" | "getready" | "served";
+  status: "waiting" | "processing" | "getready" | "served" | "archived";
   timestamp: string; // ISO string for compat with existing UI
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -123,11 +123,33 @@ export async function deductStock(
 
 // ─── Queue / Order helpers ────────────────────────────────────────────────────
 
+const QUEUE_TIME_ZONE = "Asia/Manila";
+
+function getQueueDate(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: QUEUE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function getQueueDateRange(queueDate: string): [Date, Date] {
+  const start = new Date(`${queueDate}T00:00:00+08:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return [start, end];
+}
+
 function snapToEntries(snap: QuerySnapshot<DocumentData>): QueueEntry[] {
   return snap.docs.map((d) => {
     const data = d.data();
     return {
       id: d.id,
+      queueDate: data.queueDate ?? "",
       queueNumber: data.queueNumber ?? "",
       patientName: data.patientName ?? "",
       address: data.address ?? "",
@@ -143,49 +165,143 @@ function snapToEntries(snap: QuerySnapshot<DocumentData>): QueueEntry[] {
 }
 
 export async function getQueueEntries(): Promise<QueueEntry[]> {
-  const snap = await getDocs(
-    query(collection(db, "customers"), orderBy("createdAt", "desc"))
+  const queueDate = getQueueDate();
+  const [start, end] = getQueueDateRange(queueDate);
+  const [dateTagged, legacy] = await Promise.all([
+    getDocs(
+      query(collection(db, "customers"), where("queueDate", "==", queueDate))
+    ),
+    getDocs(
+      query(
+        collection(db, "customers"),
+        where("createdAt", ">=", Timestamp.fromDate(start)),
+        where("createdAt", "<", Timestamp.fromDate(end))
+      )
+    ),
+  ]);
+  const entries = new Map(
+    snapToEntries(dateTagged).map((entry) => [entry.id, entry])
   );
-  return snapToEntries(snap);
+  for (const entry of snapToEntries(legacy)) {
+    if (
+      (!entry.queueDate || entry.queueDate === queueDate) &&
+      !entries.has(entry.id)
+    ) {
+      entries.set(entry.id, entry);
+    }
+  }
+
+  return [...entries.values()].sort(
+    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)
+  );
 }
 
 export function subscribeQueueEntries(
   cb: (entries: QueueEntry[]) => void
 ): Unsubscribe {
-  return onSnapshot(
-    query(collection(db, "customers"), orderBy("createdAt", "desc")),
-    (snap) => cb(snapToEntries(snap))
-  );
+  let queueDate = getQueueDate();
+  let dateEntries = new Map<string, QueueEntry>();
+  let legacyEntries = new Map<string, QueueEntry>();
+  let dateUnsubscribe: Unsubscribe = () => undefined;
+  let legacyUnsubscribe: Unsubscribe = () => undefined;
+
+  const publish = () => {
+    const entries = new Map(dateEntries);
+    for (const [id, entry] of legacyEntries) {
+      if (!entries.has(id)) entries.set(id, entry);
+    }
+    cb(
+      [...entries.values()].sort(
+        (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)
+      )
+    );
+  };
+
+  const subscribeToDate = () => {
+    dateUnsubscribe();
+    legacyUnsubscribe();
+    dateEntries = new Map();
+    legacyEntries = new Map();
+
+    const [start, end] = getQueueDateRange(queueDate);
+    dateUnsubscribe = onSnapshot(
+      query(
+        collection(db, "customers"),
+        where("queueDate", "==", queueDate)
+      ),
+      (snap) => {
+        dateEntries = new Map(
+          snapToEntries(snap).map((entry) => [entry.id, entry])
+        );
+        publish();
+      },
+      (error) => console.error("Could not subscribe to today's queue:", error)
+    );
+    legacyUnsubscribe = onSnapshot(
+      query(
+        collection(db, "customers"),
+        where("createdAt", ">=", Timestamp.fromDate(start)),
+        where("createdAt", "<", Timestamp.fromDate(end))
+      ),
+      (snap) => {
+        legacyEntries = new Map(
+          snapToEntries(snap)
+            .filter((entry) => !entry.queueDate || entry.queueDate === queueDate)
+            .map((entry) => [entry.id, entry])
+        );
+        publish();
+      },
+      (error) =>
+        console.error("Could not subscribe to legacy queue entries:", error)
+    );
+  };
+
+  subscribeToDate();
+  const dateCheck = setInterval(() => {
+    const currentDate = getQueueDate();
+    if (currentDate !== queueDate) {
+      queueDate = currentDate;
+      subscribeToDate();
+    }
+  }, 30_000);
+
+  return () => {
+    clearInterval(dateCheck);
+    dateUnsubscribe();
+    legacyUnsubscribe();
+  };
 }
 
 export async function getNextQueueNumber(
   patientType: QueueEntry["patientType"]
-): Promise<string> {
-  const counterRef = doc(db, "queueCounters", patientType);
-
-  const nextNumber = await runTransaction(db, async (transaction) => {
-    const counterSnap = await transaction.get(counterRef);
-    const currentNumber = Number(counterSnap.data()?.lastNumber ?? 0);
-    const next = currentNumber + 1;
-
-    if (counterSnap.exists()) {
-      transaction.update(counterRef, {
-        lastNumber: next,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      transaction.set(counterRef, {
-        patientType,
-        lastNumber: next,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-
-    return next;
+): Promise<{ queueDate: string; queueNumber: string }> {
+  const response = await fetch("/api/queue/next-number", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patientType }),
   });
+  const result: unknown = await response.json();
 
-  return String(nextNumber);
+  if (
+    !response.ok ||
+    !result ||
+    typeof result !== "object" ||
+    !("queueDate" in result) ||
+    typeof result.queueDate !== "string" ||
+    !("queueNumber" in result) ||
+    typeof result.queueNumber !== "string"
+  ) {
+    const message =
+      result &&
+      typeof result === "object" &&
+      "error" in result &&
+      typeof result.error === "string"
+        ? result.error
+        : "Could not allocate a queue number.";
+    throw new Error(message);
+  }
+
+  return { queueDate: result.queueDate, queueNumber: result.queueNumber };
 }
 
 export async function addQueueEntry(
@@ -210,6 +326,7 @@ export async function addQueueEntry(
   await setDoc(doc(db, "orders", ref.id), {
     customerId: ref.id,
     queueNumber: entry.queueNumber,
+    queueDate: entry.queueDate,
     patientName: entry.patientName,
     medicines: entry.medicines,
     quantities: entry.quantities,

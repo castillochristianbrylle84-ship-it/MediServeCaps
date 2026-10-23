@@ -35,6 +35,7 @@ const STATUS_CONFIG = {
   processing: { label: "Processing", badge: "bg-blue-100 text-blue-800 border-blue-200",      dot: "bg-blue-500"    },
   getready:   { label: "Get Ready",  badge: "bg-orange-100 text-orange-800 border-orange-200",dot: "bg-orange-400"  },
   served:     { label: "Served",     badge: "bg-emerald-100 text-emerald-800 border-emerald-200", dot: "bg-emerald-500" },
+  archived:   { label: "Archived",   badge: "bg-gray-100 text-gray-800 border-gray-200", dot: "bg-gray-500" },
 } as const;
 
 // ─── Toast ───────────────────────────────────────────────────────────────────
