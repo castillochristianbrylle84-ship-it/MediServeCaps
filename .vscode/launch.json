@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Launch Chrome (Next.js)",
+      "url": "http://mediserve-batangas.com",
+      "webRoot": "${workspaceFolder}",
+      "runtimeExecutable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "preLaunchTask": "npm: dev"
+    }
+  ],
+
+  "api_token": "4941c47efbc7ab23f7cd01956dad794674664b95",
+  "phone_number": "639XXXXXXXXX",
+  "message": "..."
+  
+}
