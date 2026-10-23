@@ -225,20 +225,15 @@ The admin and customer queue listeners show entries for the current queue date
 and switch to the new date after midnight. Older tickets without `queueDate`
 remain visible on the matching day based on their `createdAt` timestamp.
 
-The `resetDailyQueue` second-generation Cloud Function runs at midnight in
-`Asia/Manila`. It archives the previous day's tickets in batches, updates their
-`orders` and patient-type mirrors, and rolls the `queue_metadata/today`
-document forward with fresh daily counters. Ticket numbers are allocated
-server-side by `/api/queue/next-number`, using the same metadata document to
-avoid a counter reset racing with a new registration.
+Vercel schedules `GET /api/reset-queue` daily at midnight in `Asia/Manila`
+(16:00 UTC), as configured in `vercel.json`. The route archives the previous
+day's tickets in batches, updates their `orders` and patient-type mirrors, and
+rolls `queue_metadata/today` forward with fresh daily counters. Ticket numbers
+are allocated server-side by `/api/queue/next-number`, using the same metadata
+document to avoid a counter reset racing with a new registration.
 
-Deploy the scheduled function from the repository root after Firebase CLI is
-configured for this project:
-
-```sh
-firebase deploy --only functions:resetDailyQueue
-```
-
-The Firebase project must use the Blaze plan for scheduled functions and
-Cloud Scheduler. The function uses the Firebase Admin SDK's runtime service
-account; do not place a service-account private key in the function source.
+Set a high-entropy `CRON_SECRET` environment variable in Vercel. Vercel sends
+it as a bearer token to protect the reset route. The route also needs the
+existing `FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, and
+`FIREBASE_ADMIN_PRIVATE_KEY` server-side environment variables to access
+Firestore through the Admin SDK.

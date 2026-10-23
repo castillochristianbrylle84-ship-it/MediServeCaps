@@ -1,17 +1,14 @@
-import { initializeApp } from "firebase-admin/app";
+import { createHash, timingSafeEqual } from "node:crypto";
 import {
   FieldValue,
-  getFirestore,
   Timestamp,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase-admin/firestore";
-import { logger } from "firebase-functions";
-import { onSchedule } from "firebase-functions/v2/scheduler";
+import { getAdminDb } from "@/lib/firebase-admin";
 
-initializeApp();
+export const runtime = "nodejs";
 
-const db = getFirestore();
 const TIME_ZONE = "Asia/Manila";
 const BATCH_TICKET_LIMIT = 150;
 
@@ -36,11 +33,18 @@ function getPreviousQueueDateRange(today: string): {
   const end = new Date(`${today}T00:00:00+08:00`);
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
 
-  return {
-    queueDate: getDateString(start),
-    start,
-    end,
-  };
+  return { queueDate: getDateString(start), start, end };
+}
+
+function isAuthorized(request: Request, secret: string): boolean {
+  const authorization = request.headers.get("authorization") ?? "";
+  const suppliedToken = authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : "";
+  const expectedHash = createHash("sha256").update(secret).digest();
+  const suppliedHash = createHash("sha256").update(suppliedToken).digest();
+
+  return timingSafeEqual(expectedHash, suppliedHash);
 }
 
 async function findPreviousDayTickets(
@@ -48,6 +52,7 @@ async function findPreviousDayTickets(
   start: Date,
   end: Date
 ): Promise<Map<string, QueryDocumentSnapshot<DocumentData>>> {
+  const db = getAdminDb();
   const [dateTagged, legacy] = await Promise.all([
     db.collection("customers").where("queueDate", "==", queueDate).get(),
     db
@@ -73,6 +78,7 @@ async function findPreviousDayTickets(
 async function archiveTickets(
   tickets: QueryDocumentSnapshot<DocumentData>[]
 ): Promise<number> {
+  const db = getAdminDb();
   const activeTickets = tickets.filter(
     (ticket) => ticket.get("status") !== "archived"
   );
@@ -116,6 +122,7 @@ async function archiveTickets(
 }
 
 async function resetDailyCounters(today: string): Promise<void> {
+  const db = getAdminDb();
   const metadataRef = db.collection("queue_metadata").doc("today");
   const regularCounterRef = db.collection("queueCounters").doc("regular");
   const pwdCounterRef = db.collection("queueCounters").doc("pwd");
@@ -152,59 +159,58 @@ async function resetDailyCounters(today: string): Promise<void> {
       [regularCounterRef, regularSnapshot, "regular"],
       [pwdCounterRef, pwdSnapshot, "pwd"],
     ] as const) {
-      if (snapshot.exists) {
-        transaction.set(
-          ref,
-          {
-            ...snapshot.data(),
-            patientType,
-            lastNumber: 0,
-            date: today,
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      } else {
-        transaction.set(ref, {
+      transaction.set(
+        ref,
+        {
+          ...(snapshot.data() ?? {}),
           patientType,
           lastNumber: 0,
           date: today,
           updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
+        },
+        { merge: true }
+      );
     }
   });
 }
 
-export const resetDailyQueue = onSchedule(
-  {
-    schedule: "0 0 * * *",
-    timeZone: TIME_ZONE,
-  },
-  async () => {
-    const today = getDateString(new Date());
-    const previousDay = getPreviousQueueDateRange(today);
-
-    try {
-      const tickets = await findPreviousDayTickets(
-        previousDay.queueDate,
-        previousDay.start,
-        previousDay.end
-      );
-      const archivedCount = await archiveTickets([...tickets.values()]);
-      await resetDailyCounters(today);
-
-      logger.info("Daily queue rollover completed", {
-        queueDate: previousDay.queueDate,
-        archivedCount,
-        currentDate: today,
-      });
-    } catch (error) {
-      logger.error("Daily queue rollover failed", {
-        queueDate: previousDay.queueDate,
-        error,
-      });
-      throw error;
-    }
+export async function GET(request: Request) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error("CRON_SECRET is not configured.");
+    return Response.json(
+      { error: "Queue reset is not configured." },
+      { status: 500 }
+    );
   }
-);
+
+  if (!isAuthorized(request, cronSecret)) {
+    return Response.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const today = getDateString(new Date());
+  const previousDay = getPreviousQueueDateRange(today);
+
+  try {
+    const tickets = await findPreviousDayTickets(
+      previousDay.queueDate,
+      previousDay.start,
+      previousDay.end
+    );
+    const archivedCount = await archiveTickets([...tickets.values()]);
+    await resetDailyCounters(today);
+
+    return Response.json({
+      success: true,
+      queueDate: previousDay.queueDate,
+      archivedCount,
+      currentDate: today,
+    });
+  } catch (error) {
+    console.error("Daily queue rollover failed:", error);
+    return Response.json(
+      { error: "Daily queue rollover failed." },
+      { status: 500 }
+    );
+  }
+}

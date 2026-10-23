@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/reset-queue",
+      "schedule": "0 16 * * *"
+    }
+  ]
+}
