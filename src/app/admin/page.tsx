@@ -73,8 +73,8 @@ export default function AdminPage() {
 
   // Otherwise, show a clean Admin Login Screen
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-gray-100">
-      <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+    <div className="flex h-screen w-full items-center justify-center bg-emerald-100">
+      <div className="w-full max-w-md bg-gray-100 p-8 rounded-lg shadow-lg">
         <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">Admin Panel Login</h1>
         
         {error && (
@@ -92,7 +92,7 @@ export default function AdminPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
-              placeholder="adminmediserve@gmail.com"
+              placeholder="Enter your email"
             />
           </div>
 
