@@ -1,35 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import AdminApp from '@/components/AdminApp';
 import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 const ADMIN_EMAILS = ['adminmediserve@gmail.com'];
 
 export default function AdminPage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      // 1. Check if user exists and email is authorized
+      setCurrentUser(user);
       if (user && user.email && ADMIN_EMAILS.includes(user.email)) {
         setAuthorized(true);
       } else {
         setAuthorized(false);
-        // 2. Only redirect AFTER we know for sure they are not authorized or logged in
-        router.replace('/customer');
       }
-      
-      // 3. Stop loading once auth check is complete
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, []);
 
   if (loading) {
     return (
@@ -39,5 +34,23 @@ export default function AdminPage() {
     );
   }
 
-  return authorized ? <AdminApp /> : null;
+  // IF AUTHORIZED, SHOW ADMIN APP
+  if (authorized) {
+    return <AdminApp />;
+  }
+
+  // IF NOT AUTHORIZED, SHOW US WHY ON THE SCREEN INSTEAD OF REDIRECTING
+  return (
+    <div style={{ padding: '40px', fontFamily: 'sans-serif', maxWidth: '600px', margin: '0 auto' }}>
+      <h2 style={{ color: 'red' }}>Access Denied / Not Logged In</h2>
+      <p><strong>Current logged-in user:</strong> {currentUser ? currentUser.email : 'No user logged in (null)'}</p>
+      <p><strong>Expected Admin Email:</strong> {ADMIN_EMAILS[0]}</p>
+      <hr style={{ margin: '20px 0' }} />
+      <p>To fix this:</p>
+      <ol>
+        <li>Go to <a href="/customer" style={{ color: 'blue', textDecoration: 'underline' }}>/customer</a> and log in using <code>{ADMIN_EMAILS[0]}</code>.</li>
+        <li>Come back to this page.</li>
+      </ol>
+    </div>
+  );
 }
