@@ -7,6 +7,12 @@ import {
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
+
+async function setAdminRole() {
+  const adminUid = "rlayKF6vJUYZBK63lYpyC3QV59i2";
+  await getAdminAuth().setCustomUserClaims(adminUid, { admin: true });
+}
+
 function getAdminApp(): App {
   const existingApp = getApps().find((app) => app.name === "[DEFAULT]");
   if (existingApp) return existingApp;
