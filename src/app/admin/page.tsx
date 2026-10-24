@@ -76,7 +76,7 @@ export default function AdminPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
-              placeholder="adminmediserve@gmail.com"
+              placeholder="Enter admin email"
             />
           </div>
 
