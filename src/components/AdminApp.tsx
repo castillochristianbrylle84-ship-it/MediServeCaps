@@ -20,6 +20,9 @@ import {
   type QueueEntry,
 } from "@/lib/firestore";
 
+// Add this at the top of your app/admin/page.tsx file
+export const dynamic = 'force-dynamic';
+
 const CUSTOMER_APP_URL = process.env.NEXT_PUBLIC_CUSTOMER_URL || "/customer";
 
 function hasAdminRole(claims: Record<string, unknown>) {
@@ -770,7 +773,7 @@ export default function AdminApp() {
                       <tr><td colSpan={6} className="text-center py-16 text-gray-400">{medicines.length === 0 ? "No medicines. Add one to get started." : "No medicines match this type."}</td></tr>
                     ) : filteredMedicines.map((med) => {
                       const stockColor = med.stock < 50 ? "text-red-600 bg-red-50 border-red-200" : med.stock < 100 ? "text-amber-700 bg-amber-50 border-amber-200" : "text-emerald-700 bg-emerald-50 border-emerald-200";
-                      const stockLabel = med.stock < 50 ? "Low Stock" : med.stock < 100 ? "Medium" : "In Stock";
+                      const stockLabel = med.stock < 50 ? "Low Stock" : med.stock < 100 ? "Medium Stock" : "In Stock";
                       return (
                         <tr key={med.id} className="hover:bg-emerald-50/40">
                           <td className="px-6 py-4">
@@ -831,7 +834,7 @@ export default function AdminApp() {
                   </div>
                 ) : filteredMedicines.map((med) => {
                   const stockColor = med.stock < 50 ? "text-red-600 bg-red-50 border-red-200" : med.stock < 100 ? "text-amber-700 bg-amber-50 border-amber-200" : "text-emerald-700 bg-emerald-50 border-emerald-200";
-                  const stockLabel = med.stock < 50 ? "Low Stock" : med.stock < 100 ? "Medium" : "In Stock";
+                  const stockLabel = med.stock < 50 ? "Low Stock" : med.stock < 100 ? "Medium Stock" : "In Stock";
                   return (
                     <div key={med.id} className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
                       <div className="flex items-start gap-4 mb-4">
