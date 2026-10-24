@@ -459,11 +459,6 @@ export default function AdminApp() {
           <LogOutIcon className="w-4 h-4" />
           Sign Out
         </button>
-        <a href={CUSTOMER_APP_URL}
-          className="mt-1 w-full flex items-center gap-2 px-4 py-2.5 text-gray-500 hover:bg-gray-50 rounded-xl font-medium text-sm transition-colors">
-          <ArrowLeftIcon className="w-4 h-4" />
-          Customer Portal
-        </a>
       </div>
     </div>
   );
