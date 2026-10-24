@@ -6,7 +6,6 @@ import AdminApp from '@/components/AdminApp';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// Add your admin email address here
 const ADMIN_EMAILS = ['adminmediserve@gmail.com'];
 
 export default function AdminPage() {
@@ -16,17 +15,16 @@ export default function AdminPage() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        router.replace('/customer');
-        return;
-      }
-
-      // Check if logged-in user's email matches your admin email list
-      if (user.email && ADMIN_EMAILS.includes(user.email)) {
+      // 1. Check if user exists and email is authorized
+      if (user && user.email && ADMIN_EMAILS.includes(user.email)) {
         setAuthorized(true);
       } else {
+        setAuthorized(false);
+        // 2. Only redirect AFTER we know for sure they are not authorized or logged in
         router.replace('/customer');
       }
+      
+      // 3. Stop loading once auth check is complete
       setLoading(false);
     });
 
@@ -36,7 +34,7 @@ export default function AdminPage() {
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-gray-600">Verifying access...</p>
+        <p className="text-gray-600 font-medium">Verifying access...</p>
       </div>
     );
   }
