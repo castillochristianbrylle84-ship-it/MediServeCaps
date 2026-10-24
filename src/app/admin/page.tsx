@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import AdminApp from '@/components/AdminApp';
 import { auth } from '@/lib/firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, User } from 'firebase/auth';
 
 const ADMIN_EMAIL = 'adminmediserve@gmail.com';
 
@@ -25,14 +25,12 @@ export default function AdminPage() {
     return () => unsubscribe();
   }, []);
 
-  // Handle admin login form submission
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoggingIn(true);
 
     try {
-      // Check if email matches admin before trying to sign in
       if (email !== ADMIN_EMAIL) {
         throw new Error('Unauthorized admin email.');
       }
@@ -52,26 +50,12 @@ export default function AdminPage() {
     );
   }
 
-  // If logged in AND is the admin email, show the Admin Panel
+  // If logged in as the admin, render AdminApp directly without any top bars or banners!
   if (user && user.email === ADMIN_EMAIL) {
-    return (
-      <div>
-        {/* Optional quick logout bar at the top */}
-        <div className="bg-gray-900 text-white px-4 py-2 flex justify-between items-center text-sm">
-          <span>Logged in as Admin: {user.email}</span>
-          <button 
-            onClick={() => signOut(auth)} 
-            className="bg-red-600 px-3 py-1 rounded hover:bg-red-700 transition"
-          >
-            Log Out
-          </button>
-        </div>
-        <AdminApp />
-      </div>
-    );
+    return <AdminApp />;
   }
 
-  // Otherwise, show a clean Admin Login Screen
+  // Otherwise, show the clean Admin Login Screen
   return (
     <div className="flex h-screen w-full items-center justify-center bg-gray-100">
       <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
