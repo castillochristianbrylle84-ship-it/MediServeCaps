@@ -52,10 +52,29 @@ export default function AdminPage() {
     );
   }
 
+  // If logged in AND is the admin email, show the Admin Panel
+  if (user && user.email === ADMIN_EMAIL) {
+    return (
+      <div>
+        {/* Optional quick logout bar at the top */}
+        <div className="bg-gray-900 text-white px-4 py-2 flex justify-between items-center text-sm">
+          <span>Logged in as Admin: {user.email}</span>
+          <button 
+            onClick={() => signOut(auth)} 
+            className="bg-red-600 px-3 py-1 rounded hover:bg-red-700 transition"
+          >
+            Log Out
+          </button>
+        </div>
+        <AdminApp />
+      </div>
+    );
+  }
+
   // Otherwise, show a clean Admin Login Screen
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-emerald-100">
-      <div className="w-full max-w-md bg-gray-100 p-8 rounded-lg shadow-lg">
+    <div className="flex h-screen w-full items-center justify-center bg-gray-100">
+      <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
         <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">Admin Panel Login</h1>
         
         {error && (
@@ -73,7 +92,7 @@ export default function AdminPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
-              placeholder="Enter your email"
+              placeholder="adminmediserve@gmail.com"
             />
           </div>
 
