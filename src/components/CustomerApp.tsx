@@ -73,6 +73,12 @@ const STATUS_STEPS = [
   { key: "served",     label: "Served" },
 ] as const;
 
+const LOW_STOCK_THRESHOLD = 100;
+
+function isLowStock(stock: number): boolean {
+  return stock <= LOW_STOCK_THRESHOLD;
+}
+
 function apiEndpoint(path: string): string {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
   return apiBaseUrl ? new URL(path, apiBaseUrl).toString() : path;
@@ -141,6 +147,19 @@ export default function CustomerApp() {
     const unsubQueue  = subscribeQueueEntries(setEntries);
     return () => { unsubStock(); unsubQueue(); };
   }, []);
+
+  useEffect(() => {
+    setForm((prev) => {
+      let changed = false;
+      const selectedMedicines = prev.selectedMedicines.map((selected) => {
+        const stock = medicines.find((medicine) => medicine.name === selected.name)?.stock ?? 0;
+        const quantity = Math.max(1, Math.min(selected.quantity, stock));
+        if (quantity !== selected.quantity) changed = true;
+        return { ...selected, quantity };
+      });
+      return changed ? { ...prev, selectedMedicines } : prev;
+    });
+  }, [medicines]);
 
   const historyEntries = entries.filter((entry) => historyEntryIds.includes(entry.id));
   const currentEntry = entries.find((e) => e.id === currentId) ?? null;
@@ -274,12 +293,19 @@ export default function CustomerApp() {
     });
   }
 
-  function updateQty(name: string, qty: number) {
+  function updateQty(name: string, qty: number, showLimitWarning = false) {
+    const availableStock = medicines.find((medicine) => medicine.name === name)?.stock ?? 0;
+    if (!Number.isFinite(qty)) return;
+    if (qty > availableStock) {
+      if (showLimitWarning) showToast(`Cannot exceed available stock: ${availableStock}`, "error");
+      qty = availableStock;
+    }
     if (qty < 1) return;
+
     setForm((prev) => ({
       ...prev,
-      selectedMedicines: prev.selectedMedicines.map((m) =>
-        m.name === name ? { ...m, quantity: qty } : m
+      selectedMedicines: prev.selectedMedicines.map((medicine) =>
+        medicine.name === name ? { ...medicine, quantity: Math.min(qty, availableStock) } : medicine
       ),
     }));
   }
@@ -428,9 +454,16 @@ export default function CustomerApp() {
                           Quantity: {med.stock}
                         </span>
                       </div>
-                      <p className={`text-xs font-semibold mt-2 ${med.stock > 10 ? "text-green-700" : "text-red-700"}`}>
-                        {med.stock > 10 ? "In Stock" : "Low Stock"}
-                      </p>
+                      <span
+                        className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold ${
+                          isLowStock(med.stock)
+                            ? "bg-red-100 text-red-700"
+                            : "bg-green-100 text-green-700"
+                        }`}
+                        aria-label={`${med.name} stock status: ${isLowStock(med.stock) ? "Low Stock" : "In Stock"}`}
+                      >
+                        {isLowStock(med.stock) ? "Low Stock" : "In Stock"}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -661,16 +694,35 @@ export default function CustomerApp() {
                               className="p-2 text-gray-600 hover:text-[#166534] transition-colors">
                               <MinusIcon className="w-4 h-4" />
                             </button>
-                            <span className="w-8 text-center font-semibold text-[#166534]">{qty}</span>
-                            <button type="button" onClick={() => updateQty(med.name, qty + 1)}
-                              className="p-2 text-gray-600 hover:text-[#166534] transition-colors">
+                            <input
+                              type="number"
+                              min={1}
+                              max={med.stock}
+                              value={qty}
+                              onChange={(e) => updateQty(med.name, Number(e.target.value), Number(e.target.value) > med.stock)}
+                              aria-label={`Quantity for ${med.name}`}
+                              className="w-14 text-center font-semibold text-[#166534] border-0 outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            />
+                            <button type="button" onClick={() => updateQty(med.name, qty + 1, true)}
+                              disabled={qty >= med.stock}
+                              aria-label={`Increase quantity for ${med.name}`}
+                              className="p-2 text-gray-600 hover:text-[#166534] disabled:text-gray-300 disabled:cursor-not-allowed transition-colors">
                               <PlusIcon className="w-4 h-4" />
                             </button>
                           </div>
                         )}
-                        <span className="text-xs font-semibold px-3 py-1 bg-green-100 text-[#166534] rounded-full flex-shrink-0">
-                          Quantity: {med.stock}
-                        </span>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                            isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-[#166534]"
+                          }`}>
+                            Quantity: {med.stock}
+                          </span>
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                          }`}>
+                            {isLowStock(med.stock) ? "Low Stock" : "In Stock"}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
