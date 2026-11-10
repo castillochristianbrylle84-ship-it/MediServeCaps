@@ -56,7 +56,7 @@ function corsHeaders(
   const headers = new Headers({
     Vary: "Origin",
     "Access-Control-Allow-Methods":
-      "POST, OPTIONS",
+      "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers":
       "Authorization, Content-Type",
     "Access-Control-Max-Age": "600",
@@ -123,17 +123,14 @@ export async function requireAdmin(
   }
 
   try {
-    const claims =
-      await getAuth(
-        getSmsAdminApp()
-      ).verifyIdToken(
-        match[1],
-        true
-      );
+    const auth = getAuth(getSmsAdminApp());
+    const decodedToken = await auth.verifyIdToken(match[1], true);
+    const user = await auth.getUser(decodedToken.uid);
+    const customClaims = user.customClaims ?? {};
 
     if (
-      claims.admin !== true &&
-      claims.role !== "admin"
+      customClaims.admin !== true &&
+      customClaims.role !== "admin"
     ) {
       return apiJson(
         request,
@@ -168,13 +165,34 @@ export async function requireAdmin(
       );
     }
 
+    const invalidTokenCodes = new Set([
+      "auth/argument-error",
+      "auth/id-token-expired",
+      "auth/id-token-revoked",
+      "auth/invalid-id-token",
+      "auth/user-disabled",
+      "auth/user-not-found",
+    ]);
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      invalidTokenCodes.has(error.code)
+    ) {
+      return apiJson(
+        request,
+        { error: "Invalid or expired authentication token." },
+        401
+      );
+    }
+
+    console.error("Could not verify admin authorization:", error);
     return apiJson(
       request,
-      {
-        error:
-          "Invalid or expired authentication token.",
-      },
-      401
+      { error: "Could not verify admin authorization." },
+      500
     );
   }
 }

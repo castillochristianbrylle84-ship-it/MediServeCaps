@@ -120,12 +120,33 @@ For Netlify, add all five server-side variables
 **Site configuration → Environment variables** for the production deploy
 context of the Next.js Customer/backend site. Netlify does not read your local
 `.env.local`. These values are needed at runtime by the OTP route; the Firebase
-Admin values are also needed by `/api/admin/make-admin`. After adding or changing
-them, trigger a new deploy. Keep these credentials server-side; never give them
+Admin values also let the admin authorization endpoint verify the current
+Firebase Authentication user record. After adding or changing them, trigger a
+new deploy. Keep these credentials server-side; never give them
 a `NEXT_PUBLIC_` prefix or put them in the separate static Admin site's
 environment variables. `OTP_HASH_SECRET` must contain at least 32 characters.
 For `FIREBASE_ADMIN_PRIVATE_KEY`, preserve the PEM key and encode line breaks as
 `\n` if entering it as a single line.
+
+### Admin access
+
+The `/admin` page verifies signed-in users with `/api/admin/session` before
+showing the dashboard. Admin API handlers verify the Firebase ID token,
+including revocation status, then fetch the current Firebase Authentication
+user record and authorize only server-assigned `admin: true` or `role: "admin"`
+custom claims. Do not authorize using email addresses, local storage, or
+client-supplied role values.
+
+For the standalone Vite Admin deployment, set `VITE_API_BASE_URL` to the
+Next.js backend origin and include the Admin site's origin in the backend's
+`CORS_ALLOWED_ORIGINS`.
+
+The public `/api/admin/make-admin` endpoint is disabled. Assign or revoke admin
+custom claims only through a trusted, server-side Firebase Admin process, and
+have the user refresh their ID token after a role change. Because the dashboard
+also uses the Firebase client SDK for Firestore, deploy Firestore Security Rules
+that restrict privileged reads and writes to `request.auth.token.admin == true`;
+API middleware cannot protect direct Firestore SDK requests.
 
 `.env.example` lists every required and optional variable. OTP documents are accessed only by the Firebase Admin SDK and the client Firestore rules should not grant access to these collections:
 

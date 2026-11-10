@@ -25,8 +25,26 @@ export const dynamic = 'force-dynamic';
 
 const CUSTOMER_APP_URL = process.env.NEXT_PUBLIC_CUSTOMER_URL || "/customer";
 
-function hasAdminRole(claims: Record<string, unknown>) {
-  return claims.admin === true || claims.role === "admin";
+async function verifyAdminAccess(user: User): Promise<boolean> {
+  const idToken = await user.getIdToken(true);
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiBaseUrl && process.env.NEXT_PUBLIC_ADMIN_STATIC === "true") {
+    throw new Error("Set VITE_API_BASE_URL for the standalone Admin deployment.");
+  }
+  const sessionUrl = apiBaseUrl
+    ? `${apiBaseUrl.replace(/\/$/, "")}/api/admin/session`
+    : "/api/admin/session";
+  const response = await fetch(sessionUrl, {
+    headers: { Authorization: `Bearer ${idToken}` },
+    cache: "no-store",
+  });
+
+  if (response.status === 401 || response.status === 403) return false;
+  if (!response.ok) {
+    throw new Error("Could not verify admin access.");
+  }
+
+  return true;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -180,6 +198,8 @@ export default function AdminApp() {
   useEffect(() => {
     let active = true;
     const unsub = onAuthStateChanged(auth, async (authenticatedUser) => {
+      if (active) setAuthLoading(true);
+
       if (!authenticatedUser) {
         if (active) {
           setUser(null);
@@ -189,16 +209,23 @@ export default function AdminApp() {
       }
 
       try {
-        const token = await authenticatedUser.getIdTokenResult();
-        if (!hasAdminRole(token.claims)) {
+        if (!(await verifyAdminAccess(authenticatedUser))) {
           await signOut(auth);
-          if (active) setUser(null);
+          if (active) {
+            setUser(null);
+            window.alert("Admin access required. Redirecting to the customer dashboard.");
+            window.location.replace(CUSTOMER_APP_URL);
+          }
         } else if (active) {
           setUser(authenticatedUser);
         }
-      } catch {
+      } catch (error) {
         await signOut(auth);
-        if (active) setUser(null);
+        if (active) {
+          setUser(null);
+          console.error("Could not verify admin access:", error);
+          showToast("Unable to verify admin access. Please try again.", "error");
+        }
       } finally {
         if (active) setAuthLoading(false);
       }
@@ -207,30 +234,20 @@ export default function AdminApp() {
       active = false;
       unsub();
     };
-  }, []);
+  }, [showToast]);
 
   async function handleLogin(email: string, password: string): Promise<void> {
-  const credential = await signInWithEmailAndPassword(
-    auth,
-    email,
-    password
-  );
+    const credential = await signInWithEmailAndPassword(
+      auth,
+      email,
+      password
+    );
 
-  const token = await credential.user.getIdTokenResult(true);
-
-  console.log("===== FIREBASE ADMIN TEST =====");
-  console.log("UID:", credential.user.uid);
-  console.log("Email:", credential.user.email);
-  console.log("Claims:", token.claims);
-  console.log("ADMIN:", token.claims.admin);
-  console.log("ROLE:", token.claims.role);
-  console.log("================================");
-
-  if (!hasAdminRole(token.claims)) {
-    await signOut(auth);
-    throw new Error("admin-required");
+    if (!(await verifyAdminAccess(credential.user))) {
+      await signOut(auth);
+      throw new Error("admin-required");
+    }
   }
-}
 
   async function handleLogout() {
     await signOut(auth);
