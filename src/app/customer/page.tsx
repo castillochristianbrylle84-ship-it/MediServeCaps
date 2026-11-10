@@ -1,10 +1,14 @@
-import CustomerApp from "@/components/CustomerApp";
-import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+// ...your existing imports stay here
 
-export const metadata: Metadata = {
-  title: "MediServe – Get Your Queue Number",
-};
+export default async function CustomerPage() {
+  const host = (await headers()).get("host") || "";
+  const adminHost = process.env.ADMIN_HOST || "";
 
-export default function CustomerPage() {
-  return <CustomerApp />;
+  if (adminHost && host === adminHost) {
+    redirect("/admin");
+  }
+
+  // ...your existing return stays here
 }
