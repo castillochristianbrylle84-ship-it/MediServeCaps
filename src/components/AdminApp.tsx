@@ -305,7 +305,7 @@ export default function AdminApp() {
         },
         body: JSON.stringify({
           phoneNumber: entry.phone,
-          message: `Hello ${entry.patientName} (Queue ${entry.queueNumber}), your turn is coming up soon! Please prepare to be called.`,
+          message: `Hello ${entry.patientName} (Queue ${entry.queueNumber}), YOUR MEDICINE IS READY! Please proceed to the counter.`,
         }),
       });
       if (!response.ok) throw new Error(`SMS API returned HTTP ${response.status}.`);
