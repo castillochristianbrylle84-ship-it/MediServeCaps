@@ -1048,8 +1048,8 @@ export default function AdminApp() {
                           Mark Get Ready {entry.phone ? "& Send SMS" : ""}
                         </button>
                       )}
-                      <div className={`grid gap-2.5 ${entry.status === "processing" ? "grid-cols-1" : "grid-cols-2"}`}>
-                        {entry.status !== "processing" && (
+                      <div className={`grid gap-2.5 ${entry.status === "processing" || entry.status === "getready" ? "grid-cols-1" : "grid-cols-2"}`}>
+                        {entry.status !== "processing" && entry.status !== "getready" && (
                           <button onClick={() => { handleUpdateStatus(entry.id, "processing"); setModalOpen(false); }}
                             className="h-11 border-2 border-blue-300 text-blue-700 hover:bg-blue-50 font-semibold rounded-xl">
                             Mark Processing
