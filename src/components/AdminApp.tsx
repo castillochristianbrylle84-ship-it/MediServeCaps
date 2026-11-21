@@ -560,12 +560,15 @@ export default function AdminApp() {
     return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
   });
 
+  const activeQueueEntries = sortedEntries.filter(
+    (entry) => entry.status !== "served" && entry.status !== "archived"
+  );
   const filteredEntries = queueFilter === "all"
-    ? sortedEntries
+    ? activeQueueEntries
     : sortedEntries.filter((e) => e.status === queueFilter);
 
   const counts = {
-    all: entries.length,
+    all: activeQueueEntries.length,
     waiting: entries.filter((e) => e.status === "waiting").length,
     processing: entries.filter((e) => e.status === "processing").length,
     getready: entries.filter((e) => e.status === "getready").length,
@@ -961,7 +964,7 @@ export default function AdminApp() {
                         ? "bg-emerald-700 text-white shadow-md"
                         : "bg-white border border-gray-200 text-gray-600 hover:border-emerald-700"
                     }`}>
-                    {key === "all" ? "All Patients" : STATUS_CONFIG[key as keyof typeof STATUS_CONFIG]?.label ?? key}
+                    {key === "all" ? "Active Queue" : STATUS_CONFIG[key as keyof typeof STATUS_CONFIG]?.label ?? key}
                     <span className={`text-xs px-1.5 py-0.5 rounded-full ${queueFilter === key ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>
                       {counts[key]}
                     </span>
