@@ -652,7 +652,7 @@ export default function CustomerApp() {
                   )}
                 </div>
                 <p className="text-sm text-gray-500">Tap a medicine to select and set quantity</p>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="search"
                     value={neededSearchInput}
@@ -661,7 +661,7 @@ export default function CustomerApp() {
                     aria-label="Search medicine needed by name or type"
                     className="min-w-0 flex-1 h-11 px-4 rounded-xl border border-gray-300 focus:outline-none focus:border-[#166534]"
                   />
-                  <button type="button" onClick={() => setNeededSearch(neededSearchInput)} className="h-11 px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-semibold flex items-center gap-2">
+                  <button type="button" onClick={() => setNeededSearch(neededSearchInput)} className="h-11 px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-semibold flex items-center justify-center gap-2">
                     <SearchIcon className="w-4 h-4" /> Search
                   </button>
                 </div>
@@ -675,23 +675,37 @@ export default function CustomerApp() {
                     return (
                       <div key={med.id}
                         onClick={() => toggleMedicine(med.name)}
-                        className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all duration-150 ${
+                        className={`flex flex-col sm:flex-row sm:items-center gap-3 p-3 sm:p-4 rounded-xl border-2 cursor-pointer transition-all duration-150 ${
                           isSelected ? "border-[#166534] bg-green-50 shadow-sm" : "border-gray-200 bg-white hover:border-green-300 hover:bg-green-50/50"
                         }`}>
-                        <div className="flex-shrink-0">
-                          {isSelected
-                            ? <CheckSquareIcon className="w-6 h-6 text-[#166534]" />
-                            : <SquareIcon className="w-6 h-6 text-gray-300" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`font-semibold text-base ${isSelected ? "text-[#166534]" : "text-gray-800"}`}>{med.name}</p>
-                          <p className="text-sm text-gray-500">{med.type}</p>
+                        <div className="flex items-start gap-3 min-w-0 w-full sm:flex-1">
+                          <div className="flex-shrink-0 mt-0.5">
+                            {isSelected
+                              ? <CheckSquareIcon className="w-6 h-6 text-[#166534]" />
+                              : <SquareIcon className="w-6 h-6 text-gray-300" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-semibold text-base break-words ${isSelected ? "text-[#166534]" : "text-gray-800"}`}>{med.name}</p>
+                            <p className="text-sm text-gray-500 break-words">{med.type}</p>
+                          </div>
+                          <div className="flex sm:hidden flex-col items-end gap-1 flex-shrink-0">
+                            <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${
+                              isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-[#166534]"
+                            }`}>
+                              Qty: {med.stock}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                            }`}>
+                              {isLowStock(med.stock) ? "Low" : "In Stock"}
+                            </span>
+                          </div>
                         </div>
                         {isSelected && (
-                          <div className="flex items-center gap-2 bg-white rounded-lg border border-gray-300 px-2"
+                          <div className="flex items-center justify-between sm:justify-start gap-2 bg-white rounded-lg border border-gray-300 px-2 w-full sm:w-auto"
                             onClick={(e) => e.stopPropagation()}>
                             <button type="button" onClick={() => updateQty(med.name, qty - 1)}
-                              className="p-2 text-gray-600 hover:text-[#166534] transition-colors">
+                              className="p-2 flex-shrink-0 text-gray-600 hover:text-[#166534] transition-colors">
                               <MinusIcon className="w-4 h-4" />
                             </button>
                             <input
@@ -701,17 +715,17 @@ export default function CustomerApp() {
                               value={qty}
                               onChange={(e) => updateQty(med.name, Number(e.target.value), Number(e.target.value) > med.stock)}
                               aria-label={`Quantity for ${med.name}`}
-                              className="w-14 text-center font-semibold text-[#166534] border-0 outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              className="w-12 sm:w-14 text-center font-semibold text-[#166534] border-0 outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
                             <button type="button" onClick={() => updateQty(med.name, qty + 1, true)}
                               disabled={qty >= med.stock}
                               aria-label={`Increase quantity for ${med.name}`}
-                              className="p-2 text-gray-600 hover:text-[#166534] disabled:text-gray-300 disabled:cursor-not-allowed transition-colors">
+                              className="p-2 flex-shrink-0 text-gray-600 hover:text-[#166534] disabled:text-gray-300 disabled:cursor-not-allowed transition-colors">
                               <PlusIcon className="w-4 h-4" />
                             </button>
                           </div>
                         )}
-                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <div className="hidden sm:flex flex-col items-end gap-1 flex-shrink-0">
                           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
                             isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-[#166534]"
                           }`}>
