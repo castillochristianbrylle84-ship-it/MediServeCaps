@@ -49,6 +49,7 @@ async function verifyAdminAccess(user: User): Promise<boolean> {
 // ─── Types ────────────────────────────────────────────────────────────────────
 type AdminPage = "dashboard" | "queue" | "medicines";
 type QueueFilter = "all" | "waiting" | "processing" | "getready" | "served";
+type ReportPeriod = "daily" | "weekly" | "monthly" | "yearly" | "custom";
 
 const MEDICINE_CATEGORIES = [
   "Prescription drugs",
@@ -239,6 +240,11 @@ export default function AdminApp() {
   const [medLoading, setMedLoading] = useState(false);
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
   const alertedLowStockIds = useRef(new Set<string>());
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("daily");
+  const [reportCategory, setReportCategory] = useState("all");
+  const [reportMedicine, setReportMedicine] = useState("all");
+  const [reportStartDate, setReportStartDate] = useState("");
+  const [reportEndDate, setReportEndDate] = useState("");
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -510,6 +516,74 @@ export default function AdminApp() {
     ? medicines
     : medicines.filter((med) => med.type.trim() === medicineTypeFilter);
 
+  const reportEntries = entries.filter((entry) => {
+    if (entry.status !== "served") return false;
+    const entryDate = new Date(entry.timestamp);
+    const now = new Date();
+    let inPeriod = true;
+
+    if (reportPeriod === "daily") {
+      inPeriod = entryDate.toDateString() === now.toDateString();
+    } else if (reportPeriod === "weekly") {
+      const start = new Date(now);
+      start.setDate(now.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+      inPeriod = entryDate >= start && entryDate <= now;
+    } else if (reportPeriod === "monthly") {
+      inPeriod = entryDate.getFullYear() === now.getFullYear()
+        && entryDate.getMonth() === now.getMonth();
+    } else if (reportPeriod === "yearly") {
+      inPeriod = entryDate.getFullYear() === now.getFullYear();
+    } else if (reportPeriod === "custom") {
+      if (!reportStartDate || !reportEndDate) {
+        inPeriod = false;
+      } else {
+        const start = new Date(`${reportStartDate}T00:00:00`);
+        const end = new Date(`${reportEndDate}T23:59:59`);
+        inPeriod = entryDate >= start && entryDate <= end;
+      }
+    }
+
+    if (!inPeriod) return false;
+
+    if (reportCategory !== "all") {
+      const categoryNames = medicines
+        .filter((med) => med.type === reportCategory)
+        .map((med) => med.name);
+      const hasCategoryMedicine = entry.medicines.some((med) => categoryNames.includes(med));
+      if (!hasCategoryMedicine) return false;
+    }
+
+    if (reportMedicine !== "all" && !entry.medicines.includes(reportMedicine)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const reportMedicineNames = [...new Set([
+    ...medicines.map((med) => med.name),
+    ...entries.flatMap((entry) => entry.medicines),
+  ])].sort();
+
+  const reportProductTotals = reportMedicineNames
+    .filter((name) => reportMedicine === "all" || reportMedicine === name)
+    .filter((name) => {
+      if (reportCategory === "all") return true;
+      return medicines.some((med) => med.name === name && med.type === reportCategory);
+    })
+    .map((name) => ({
+      name,
+      quantity: reportEntries.reduce((total, entry) => {
+        const index = entry.medicines.indexOf(name);
+        return total + (index >= 0 ? entry.quantities[index] ?? 1 : 0);
+      }, 0),
+    }))
+    .filter((item) => item.quantity > 0)
+    .sort((a, b) => b.quantity - a.quantity);
+
+  const reportTotalUnits = reportProductTotals.reduce((total, item) => total + item.quantity, 0);
+
   // ─── Loading / Auth gate ─────────────────────────────────────────────────
   if (authLoading) {
     return (
@@ -660,6 +734,102 @@ export default function AdminApp() {
                     <p className="text-xs text-gray-500">{stat.sub}</p>
                   </div>
                 ))}
+              </div>
+
+              {/* Medicine Dispensing Report */}
+              <div className="bg-white rounded-3xl shadow-sm border border-emerald-100 overflow-hidden mb-6">
+                <div className="px-6 py-5 border-b border-emerald-50">
+                  <h2 className="text-xl font-bold text-gray-900">Medicine Dispensing Report</h2>
+                  <p className="text-sm text-gray-500 mt-1">Filter dispensing records by time period, category, or medicine</p>
+                </div>
+
+                <div className="p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-600">Time Period</label>
+                      <select value={reportPeriod} onChange={(e) => setReportPeriod(e.target.value as ReportPeriod)}
+                        className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold focus:border-emerald-700 focus:outline-none">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                        <option value="custom">Custom Date Range</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-600">Medicine Category</label>
+                      <select value={reportCategory} onChange={(e) => {
+                        setReportCategory(e.target.value);
+                        setReportMedicine("all");
+                      }}
+                        className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold focus:border-emerald-700 focus:outline-none">
+                        <option value="all">All Categories</option>
+                        {MEDICINE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2 xl:col-span-2">
+                      <label className="text-xs font-bold text-gray-600">Specific Medicine</label>
+                      <select value={reportMedicine} onChange={(e) => setReportMedicine(e.target.value)}
+                        className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold focus:border-emerald-700 focus:outline-none">
+                        <option value="all">All Medicines</option>
+                        {reportMedicineNames
+                          .filter((name) => reportCategory === "all" || medicines.some((med) => med.name === name && med.type === reportCategory))
+                          .map((name) => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {reportPeriod === "custom" && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-gray-600">Start Date</label>
+                        <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)}
+                          className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold focus:border-emerald-700 focus:outline-none" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-gray-600">End Date</label>
+                        <input type="date" value={reportEndDate} min={reportStartDate} onChange={(e) => setReportEndDate(e.target.value)}
+                          className="w-full h-11 px-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold focus:border-emerald-700 focus:outline-none" />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                      <p className="text-sm text-gray-600 font-semibold">Total Medicines Dispensed</p>
+                      <p className="text-3xl font-black text-emerald-700 mt-1">{reportTotalUnits}</p>
+                      <p className="text-xs text-gray-500 mt-1">Units released</p>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+                      <p className="text-sm text-gray-600 font-semibold">Total Transactions</p>
+                      <p className="text-3xl font-black text-gray-900 mt-1">{reportEntries.length}</p>
+                      <p className="text-xs text-gray-500 mt-1">Dispensing records</p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-2xl border border-emerald-100">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-emerald-50 border-b border-emerald-100">
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Medicine</th>
+                          <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Quantity Given</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-emerald-50">
+                        {reportProductTotals.length === 0 ? (
+                          <tr><td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">No dispensing records match the filters</td></tr>
+                        ) : reportProductTotals.map((item) => (
+                          <tr key={item.name} className="hover:bg-emerald-50/40">
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-800">{item.name}</td>
+                            <td className="px-4 py-3 text-right text-sm font-bold text-emerald-700">{item.quantity}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 gap-6">
