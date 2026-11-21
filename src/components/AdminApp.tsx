@@ -51,6 +51,18 @@ async function verifyAdminAccess(user: User): Promise<boolean> {
 type AdminPage = "dashboard" | "queue" | "medicines";
 type QueueFilter = "all" | "waiting" | "processing" | "getready" | "served";
 
+const MEDICINE_CATEGORIES = [
+  "Prescription drugs",
+  "Over-the-counter (OTC) drugs",
+  "Analgesics and antipyretics",
+  "Antibiotics and antivirals",
+  "Cardiovascular drugs",
+  "Respiratory drugs",
+  "Gastrointestinal drugs",
+  "Endocrine and metabolic drugs",
+  "Central nervous system & psychiatric drugs",
+] as const;
+
 const STATUS_CONFIG = {
   waiting:    { label: "Waiting",    badge: "bg-amber-100 text-amber-800 border-amber-200",   dot: "bg-amber-400"   },
   processing: { label: "Processing", badge: "bg-blue-100 text-blue-800 border-blue-200",      dot: "bg-blue-500"    },
@@ -328,15 +340,18 @@ export default function AdminApp() {
   }
 
   // ─── Medicine actions ─────────────────────────────────────────────────────
-  function openAddMed() {
+  function openAddMed(category = medicineTypeFilter === "all" ? MEDICINE_CATEGORIES[0] : medicineTypeFilter) {
     setEditingMed(null);
-    setMedForm({ name: "", type: "", stock: 0, available: true });
+    setMedForm({ name: "", type: MEDICINE_CATEGORIES.includes(category as typeof MEDICINE_CATEGORIES[number]) ? category : MEDICINE_CATEGORIES[0], stock: 0, available: true });
     setMedModalOpen(true);
   }
 
   function openEditMed(med: StockItem) {
     setEditingMed(med);
-    setMedForm({ name: med.name, type: med.type, stock: med.stock, available: med.available });
+    const category = MEDICINE_CATEGORIES.includes(med.type as typeof MEDICINE_CATEGORIES[number])
+      ? med.type
+      : MEDICINE_CATEGORIES[0];
+    setMedForm({ name: med.name, type: category, stock: med.stock, available: med.available });
     setMedModalOpen(true);
   }
 
@@ -407,7 +422,7 @@ export default function AdminApp() {
   };
 
   const lowStockMeds = medicines.filter((m) => m.stock < 50);
-  const medicineTypes = [...new Set(medicines.map((med) => med.type.trim()).filter(Boolean))].sort();
+  const medicineTypes = MEDICINE_CATEGORIES;
   const filteredMedicines = medicineTypeFilter === "all"
     ? medicines
     : medicines.filter((med) => med.type.trim() === medicineTypeFilter);
@@ -741,23 +756,57 @@ export default function AdminApp() {
                   <h1 className="text-3xl font-bold text-gray-900 mb-1">Medicine Inventory</h1>
                   <p className="text-gray-500">{medicines.length} total · {medicines.filter((m) => m.available).length} available · {lowStockMeds.length} low stock</p>
                 </div>
-                <button onClick={openAddMed}
+                <button onClick={() => openAddMed()}
                   className="bg-emerald-700 hover:bg-emerald-800 text-white h-12 px-6 rounded-xl text-base font-semibold shadow-sm flex items-center">
                   <PlusIcon className="w-5 h-5 mr-2" /> Add Medicine
                 </button>
               </div>
 
-              <div className="mb-6 flex items-center gap-3">
-                <label htmlFor="medicine-type-filter" className="text-sm font-semibold text-gray-700">Filter by Type</label>
-                <select
-                  id="medicine-type-filter"
-                  value={medicineTypeFilter}
-                  onChange={(e) => setMedicineTypeFilter(e.target.value)}
-                  className="h-10 rounded-xl border border-emerald-200 bg-white px-3 text-sm font-semibold text-gray-700 focus:border-emerald-700 focus:outline-none"
-                >
-                  <option value="all">All Types</option>
-                  {medicineTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-                </select>
+              <div className="mb-6">
+                <p className="text-sm font-semibold text-gray-700 mb-3">Medicine Categories</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMedicineTypeFilter("all")}
+                    className={`min-h-20 px-4 py-3 rounded-xl border text-left transition-colors ${
+                      medicineTypeFilter === "all"
+                        ? "bg-emerald-700 border-emerald-700 text-white"
+                        : "bg-white border-emerald-200 text-gray-800 hover:border-emerald-400"
+                    }`}
+                  >
+                    <span className="font-bold">All Categories</span>
+                    <span className={`block text-sm mt-1 ${medicineTypeFilter === "all" ? "text-emerald-100" : "text-gray-500"}`}>{medicines.length} medicines</span>
+                  </button>
+                  {medicineTypes.map((category) => {
+                    const count = medicines.filter((med) => med.type.trim() === category).length;
+                    const selected = medicineTypeFilter === category;
+                    return (
+                      <div
+                        key={category}
+                        className={`min-h-20 rounded-xl border transition-colors flex items-stretch ${
+                          selected ? "bg-emerald-50 border-emerald-700" : "bg-white border-emerald-200"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setMedicineTypeFilter(category)}
+                          className="flex-1 px-4 py-3 text-left"
+                        >
+                          <span className="font-bold text-gray-900 leading-tight block">{category}</span>
+                          <span className="text-sm text-gray-500 mt-1 block">{count} medicines</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openAddMed(category)}
+                          title={`Add medicine to ${category}`}
+                          className="m-2 w-10 h-10 self-center rounded-lg border-2 border-emerald-700 text-emerald-700 hover:bg-emerald-700 hover:text-white flex items-center justify-center"
+                        >
+                          <PlusIcon className="w-5 h-5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {lowStockMeds.length > 0 && (
@@ -775,7 +824,7 @@ export default function AdminApp() {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-emerald-50 border-b border-emerald-100">
-                      {["Medicine Name","Type","Quantity","Status","Availability","Actions"].map((h) => (
+                      {["Medicine Name","Category","Quantity","Status","Availability","Actions"].map((h) => (
                         <th key={h} className={`px-6 py-4 text-sm font-bold text-gray-600 uppercase ${h === "Actions" ? "text-right" : "text-left"}`}>{h}</th>
                       ))}
                     </tr>
@@ -1004,10 +1053,13 @@ export default function AdminApp() {
                   className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-800">Type <span className="text-red-500">*</span></label>
-                <input value={medForm.type} onChange={(e) => setMedForm((p) => ({ ...p, type: e.target.value }))} required
-                  placeholder="e.g., Tablet, Capsule, Syrup"
-                  className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                <label className="text-sm font-semibold text-gray-800">Category <span className="text-red-500">*</span></label>
+                <select value={medForm.type} onChange={(e) => setMedForm((p) => ({ ...p, type: e.target.value }))} required
+                  className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-white focus:border-emerald-700 focus:outline-none text-base">
+                  {MEDICINE_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-gray-800">Quantity</label>
