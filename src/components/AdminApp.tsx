@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   signInWithEmailAndPassword,
   signOut,
@@ -13,7 +13,6 @@ import {
   subscribeQueueEntries,
   addStockItem,
   updateStockItem,
-  deleteStockItem,
   updateQueueEntryStatus,
   deleteQueueEntry,
   type StockItem,
@@ -62,6 +61,25 @@ const MEDICINE_CATEGORIES = [
   "Endocrine and metabolic drugs",
   "Central nervous system & psychiatric drugs",
 ] as const;
+
+function getStockStatus(stock: number) {
+  if (stock <= 0) {
+    return {
+      label: "No Stock",
+      color: "text-red-700 bg-red-50 border-red-200",
+    };
+  }
+  if (stock < 50) {
+    return {
+      label: "Low Stock",
+      color: "text-amber-700 bg-amber-50 border-amber-200",
+    };
+  }
+  return {
+    label: "In Stock",
+    color: "text-emerald-700 bg-emerald-50 border-emerald-200",
+  };
+}
 
 const STATUS_CONFIG = {
   waiting:    { label: "Waiting",    badge: "bg-amber-100 text-amber-800 border-amber-200",   dot: "bg-amber-400"   },
@@ -205,6 +223,7 @@ export default function AdminApp() {
   const [medForm, setMedForm] = useState({ name: "", type: "", stock: 0, available: true });
   const [medLoading, setMedLoading] = useState(false);
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
+  const alertedLowStockIds = useRef(new Set<string>());
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -273,6 +292,19 @@ export default function AdminApp() {
     const unsubQueue = subscribeQueueEntries(setEntries);
     return () => { unsubStock(); unsubQueue(); };
   }, [user]);
+
+  useEffect(() => {
+    if (!medicines.length) return;
+
+    medicines.forEach((med) => {
+      if (med.stock > 0 && med.stock <= 50 && !alertedLowStockIds.current.has(med.id)) {
+        alertedLowStockIds.current.add(med.id);
+        showToast(`Low stock alert: ${med.name} has ${med.stock} remaining`, "error");
+      } else if (med.stock <= 0 || med.stock > 50) {
+        alertedLowStockIds.current.delete(med.id);
+      }
+    });
+  }, [medicines, showToast]);
 
   // ─── Navigation ──────────────────────────────────────────────────────────
   function navigate(page: AdminPage) {
@@ -379,16 +411,6 @@ export default function AdminApp() {
     }
   }
 
-  async function handleDeleteMed(id: string, name: string) {
-    if (!confirm(`Remove "${name}" from inventory?`)) return;
-    try {
-      await deleteStockItem(id);
-      showToast("Medicine removed");
-    } catch {
-      showToast("Failed to remove medicine", "error");
-    }
-  }
-
   async function handleToggleAvailable(med: StockItem) {
     if (med.stock <= 0) {
       showToast("Restock this medicine before marking it available", "error");
@@ -421,7 +443,7 @@ export default function AdminApp() {
     served: entries.filter((e) => e.status === "served").length,
   };
 
-  const lowStockMeds = medicines.filter((m) => m.stock < 50);
+  const lowStockMeds = medicines.filter((m) => m.stock > 0 && m.stock <= 50);
   const medicineTypes = MEDICINE_CATEGORIES;
   const filteredMedicines = medicineTypeFilter === "all"
     ? medicines
@@ -756,10 +778,6 @@ export default function AdminApp() {
                   <h1 className="text-3xl font-bold text-gray-900 mb-1">Medicine Inventory</h1>
                   <p className="text-gray-500">{medicines.length} total · {medicines.filter((m) => m.available).length} available · {lowStockMeds.length} low stock</p>
                 </div>
-                <button onClick={() => openAddMed()}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white h-12 px-6 rounded-xl text-base font-semibold shadow-sm flex items-center">
-                  <PlusIcon className="w-5 h-5 mr-2" /> Add Medicine
-                </button>
               </div>
 
               <div className="mb-6">
@@ -833,8 +851,9 @@ export default function AdminApp() {
                     {filteredMedicines.length === 0 ? (
                       <tr><td colSpan={6} className="text-center py-16 text-gray-400">{medicines.length === 0 ? "No medicines. Add one to get started." : "No medicines match this type."}</td></tr>
                     ) : filteredMedicines.map((med) => {
-                      const stockColor = med.stock < 50 ? "text-red-600 bg-red-50 border-red-200" : med.stock < 100 ? "text-amber-700 bg-amber-50 border-amber-200" : "text-emerald-700 bg-emerald-50 border-emerald-200";
-                      const stockLabel = med.stock < 50 ? "Low Stock" : med.stock < 100 ? "Medium Stock" : "In Stock";
+                      const stockStatus = getStockStatus(med.stock);
+                      const stockColor = stockStatus.color;
+                      const stockLabel = stockStatus.label;
                       return (
                         <tr key={med.id} className="hover:bg-emerald-50/40">
                           <td className="px-6 py-4">
@@ -873,10 +892,6 @@ export default function AdminApp() {
                                 className="h-9 px-3 border-2 border-emerald-700 text-emerald-700 hover:bg-emerald-50 font-semibold rounded-lg flex items-center">
                                 <EditIcon className="w-4 h-4 mr-1" /> Edit
                               </button>
-                              <button onClick={() => handleDeleteMed(med.id, med.name)}
-                                className="h-9 w-9 bg-red-600 text-white rounded-lg flex items-center justify-center hover:bg-red-700">
-                                <TrashIcon className="w-4 h-4" />
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -894,8 +909,9 @@ export default function AdminApp() {
                     <p className="text-gray-500">{medicines.length === 0 ? "No medicines yet." : "No medicines match this type."}</p>
                   </div>
                 ) : filteredMedicines.map((med) => {
-                  const stockColor = med.stock < 50 ? "text-red-600 bg-red-50 border-red-200" : med.stock < 100 ? "text-amber-700 bg-amber-50 border-amber-200" : "text-emerald-700 bg-emerald-50 border-emerald-200";
-                  const stockLabel = med.stock < 50 ? "Low Stock" : med.stock < 100 ? "Medium Stock" : "In Stock";
+                  const stockStatus = getStockStatus(med.stock);
+                  const stockColor = stockStatus.color;
+                  const stockLabel = stockStatus.label;
                   return (
                     <div key={med.id} className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
                       <div className="flex items-start gap-4 mb-4">
@@ -923,10 +939,6 @@ export default function AdminApp() {
                         <button onClick={() => openEditMed(med)}
                           className="flex-1 h-10 border-2 border-emerald-700 text-emerald-700 hover:bg-emerald-50 font-semibold rounded-xl flex items-center justify-center">
                           <EditIcon className="w-4 h-4 mr-1" /> Edit
-                        </button>
-                        <button onClick={() => handleDeleteMed(med.id, med.name)}
-                          className="h-10 w-10 bg-red-600 text-white rounded-xl flex items-center justify-center hover:bg-red-700">
-                          <TrashIcon className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
