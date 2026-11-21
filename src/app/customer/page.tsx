@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-// ...your existing imports stay here
+import CustomerApp from "@/components/CustomerApp";
 
 export default async function CustomerPage() {
   const host = (await headers()).get("host") || "";
@@ -10,5 +10,5 @@ export default async function CustomerPage() {
     redirect("/admin");
   }
 
-  // ...your existing return stays here
+  return <CustomerApp />;
 }

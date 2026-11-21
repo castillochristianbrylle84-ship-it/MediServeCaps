@@ -9,7 +9,7 @@ export default async function AdminPage() {
   const host = clean((await headers()).get("host") || "");
   const adminHost = clean(process.env.ADMIN_HOST || "");
 
-  if (!adminHost || host !== adminHost) {
+  if (adminHost && host !== adminHost) {
     redirect("/customer");
   }
 
