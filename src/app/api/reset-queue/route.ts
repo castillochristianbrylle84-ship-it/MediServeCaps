@@ -97,6 +97,8 @@ async function archiveTickets(
     for (const ticket of chunk) {
       const update = {
         status: "archived",
+        wasServed:
+          ticket.get("status") === "served" || ticket.get("wasServed") === true,
         updatedAt: FieldValue.serverTimestamp(),
       };
       const patientCollection =

@@ -64,6 +64,8 @@ export interface QueueEntry {
   quantities: number[];
   status: "waiting" | "processing" | "getready" | "served" | "archived";
   timestamp: string; // ISO string for compat with existing UI
+  dispensedAt?: string;
+  wasServed?: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -170,8 +172,47 @@ function snapToEntries(snap: QuerySnapshot<DocumentData>): QueueEntry[] {
       quantities: data.quantities ?? [],
       status: data.status ?? "waiting",
       timestamp: data.timestamp ?? new Date().toISOString(),
+      dispensedAt:
+        data.dispensedAt instanceof Timestamp
+          ? data.dispensedAt.toDate().toISOString()
+          : typeof data.dispensedAt === "string"
+            ? data.dispensedAt
+            : undefined,
+      wasServed: data.wasServed === true,
     } as QueueEntry;
   });
+}
+
+export async function getQueueEntriesForDateRange(
+  startDate: string,
+  endDate: string
+): Promise<QueueEntry[]> {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  end.setDate(end.getDate() + 1);
+  const [dateTagged, timestamped] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, "customers"),
+        where("queueDate", ">=", startDate),
+        where("queueDate", "<=", endDate)
+      )
+    ),
+    getDocs(
+      query(
+        collection(db, "customers"),
+        where("timestamp", ">=", start.toISOString()),
+        where("timestamp", "<", end.toISOString())
+      )
+    ),
+  ]);
+  const entries = new Map(
+    snapToEntries(dateTagged).map((entry) => [entry.id, entry])
+  );
+  for (const entry of snapToEntries(timestamped)) {
+    entries.set(entry.id, entry);
+  }
+  return [...entries.values()];
 }
 
 export async function getQueueEntries(): Promise<QueueEntry[]> {
@@ -361,12 +402,14 @@ export async function updateQueueEntryStatus(
 ): Promise<void> {
   await updateDoc(doc(db, "customers", id), {
     status,
+    ...(status === "served" ? { dispensedAt: serverTimestamp() } : {}),
     updatedAt: serverTimestamp(),
   });
   // Mirror to orders
   try {
     await updateDoc(doc(db, "orders", id), {
       status,
+      ...(status === "served" ? { dispensedAt: serverTimestamp() } : {}),
       updatedAt: serverTimestamp(),
     });
   } catch {

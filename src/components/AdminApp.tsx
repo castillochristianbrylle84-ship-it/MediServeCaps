@@ -15,6 +15,7 @@ import {
   updateStockItem,
   updateQueueEntryStatus,
   deleteQueueEntry,
+  getQueueEntriesForDateRange,
   type StockItem,
   type QueueEntry,
 } from "@/lib/firestore";
@@ -245,6 +246,8 @@ export default function AdminApp() {
   const [reportMedicine, setReportMedicine] = useState("all");
   const [reportStartDate, setReportStartDate] = useState("");
   const [reportEndDate, setReportEndDate] = useState("");
+  const [reportHistoryEntries, setReportHistoryEntries] = useState<QueueEntry[]>([]);
+  const [reportHistoryLoading, setReportHistoryLoading] = useState(false);
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -313,6 +316,41 @@ export default function AdminApp() {
     const unsubQueue = subscribeQueueEntries(setEntries);
     return () => { unsubStock(); unsubQueue(); };
   }, [user]);
+
+  useEffect(() => {
+    if (
+      !user ||
+      reportPeriod !== "custom" ||
+      !reportStartDate ||
+      !reportEndDate
+    ) {
+      setReportHistoryEntries([]);
+      setReportHistoryLoading(false);
+      return;
+    }
+
+    let active = true;
+    setReportHistoryEntries([]);
+    setReportHistoryLoading(true);
+    getQueueEntriesForDateRange(reportStartDate, reportEndDate)
+      .then((historicalEntries) => {
+        if (active) setReportHistoryEntries(historicalEntries);
+      })
+      .catch((error: unknown) => {
+        console.error("Could not load dispensing report for selected dates:", error);
+        if (active) {
+          setReportHistoryEntries([]);
+          showToast("Could not load the dispensing report for those dates", "error");
+        }
+      })
+      .finally(() => {
+        if (active) setReportHistoryLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user, reportPeriod, reportStartDate, reportEndDate, showToast]);
 
   useEffect(() => {
     if (!medicines.length) return;
@@ -516,9 +554,10 @@ export default function AdminApp() {
     ? medicines
     : medicines.filter((med) => med.type.trim() === medicineTypeFilter);
 
-  const reportEntries = entries.filter((entry) => {
-    if (entry.status !== "served") return false;
-    const entryDate = new Date(entry.timestamp);
+  const reportSourceEntries = reportPeriod === "custom" ? reportHistoryEntries : entries;
+  const reportEntries = reportSourceEntries.filter((entry) => {
+    if (entry.status !== "served" && !entry.wasServed) return false;
+    const entryDate = new Date(entry.dispensedAt ?? entry.timestamp);
     const now = new Date();
     let inPeriod = true;
 
@@ -819,7 +858,7 @@ export default function AdminApp() {
                       </thead>
                       <tbody className="divide-y divide-emerald-50">
                         {reportProductTotals.length === 0 ? (
-                          <tr><td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">No dispensing records match the filters</td></tr>
+                          <tr><td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">{reportHistoryLoading ? "Loading dispensing records..." : "No dispensing records match the filters"}</td></tr>
                         ) : reportProductTotals.map((item) => (
                           <tr key={item.name} className="hover:bg-emerald-50/40">
                             <td className="px-4 py-3 text-sm font-semibold text-gray-800">{item.name}</td>
