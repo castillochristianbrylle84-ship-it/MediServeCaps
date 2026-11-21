@@ -1041,20 +1041,26 @@ export default function AdminApp() {
                     </div>
 
                     <div className="space-y-2.5 pt-1">
-                      <button onClick={() => { handleUpdateStatus(entry.id, "getready"); setModalOpen(false); }}
-                        className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl flex items-center justify-center gap-2">
-                        <BellIcon className="w-5 h-5" />
-                        Mark Get Ready {entry.phone ? "& Send SMS" : ""}
-                      </button>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <button onClick={() => { handleUpdateStatus(entry.id, "processing"); setModalOpen(false); }}
-                          className="h-11 border-2 border-blue-300 text-blue-700 hover:bg-blue-50 font-semibold rounded-xl">
-                          Mark Processing
+                      {entry.status !== "getready" && (
+                        <button onClick={() => { handleUpdateStatus(entry.id, "getready"); setModalOpen(false); }}
+                          className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl flex items-center justify-center gap-2">
+                          <BellIcon className="w-5 h-5" />
+                          Mark Get Ready {entry.phone ? "& Send SMS" : ""}
                         </button>
-                        <button onClick={() => { handleUpdateStatus(entry.id, "served"); setModalOpen(false); }}
-                          className="h-11 bg-emerald-700 text-white font-semibold rounded-xl hover:bg-emerald-800">
-                          Mark Served
-                        </button>
+                      )}
+                      <div className={`grid gap-2.5 ${entry.status === "processing" ? "grid-cols-1" : "grid-cols-2"}`}>
+                        {entry.status !== "processing" && (
+                          <button onClick={() => { handleUpdateStatus(entry.id, "processing"); setModalOpen(false); }}
+                            className="h-11 border-2 border-blue-300 text-blue-700 hover:bg-blue-50 font-semibold rounded-xl">
+                            Mark Processing
+                          </button>
+                        )}
+                        {entry.status !== "served" && (
+                          <button onClick={() => { handleUpdateStatus(entry.id, "served"); setModalOpen(false); }}
+                            className="h-11 bg-emerald-700 text-white font-semibold rounded-xl hover:bg-emerald-800">
+                            Mark Served
+                          </button>
+                        )}
                       </div>
                       <button onClick={() => handleDeleteEntry(entry.id, entry.queueNumber)}
                         className="w-full h-11 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 flex items-center justify-center gap-2">
