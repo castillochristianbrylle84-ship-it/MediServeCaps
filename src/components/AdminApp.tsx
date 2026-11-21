@@ -220,7 +220,23 @@ export default function AdminApp() {
   // Medicine modal state
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed]     = useState<StockItem | null>(null);
-  const [medForm, setMedForm] = useState({ name: "", type: "", stock: 0, available: true, expirationDate: "" });
+  const [medForm, setMedForm] = useState({
+    name: "",
+    type: "",
+    stock: 0,
+    available: true,
+    genericName: "",
+    dosageStrength: "",
+    dosageForm: "",
+    unitOfMeasurement: "",
+    batchNumber: "",
+    minimumStock: 0,
+    storageLocation: "",
+    manufacturingDate: "",
+    expirationDate: "",
+    receivedDate: "",
+    supplierContact: "",
+  });
   const [medLoading, setMedLoading] = useState(false);
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
   const alertedLowStockIds = useRef(new Set<string>());
@@ -374,7 +390,23 @@ export default function AdminApp() {
   // ─── Medicine actions ─────────────────────────────────────────────────────
   function openAddMed(category = medicineTypeFilter === "all" ? MEDICINE_CATEGORIES[0] : medicineTypeFilter) {
     setEditingMed(null);
-    setMedForm({ name: "", type: MEDICINE_CATEGORIES.includes(category as typeof MEDICINE_CATEGORIES[number]) ? category : MEDICINE_CATEGORIES[0], stock: 0, available: true, expirationDate: "" });
+    setMedForm({
+      name: "",
+      type: MEDICINE_CATEGORIES.includes(category as typeof MEDICINE_CATEGORIES[number]) ? category : MEDICINE_CATEGORIES[0],
+      stock: 0,
+      available: true,
+      genericName: "",
+      dosageStrength: "",
+      dosageForm: "",
+      unitOfMeasurement: "",
+      batchNumber: "",
+      minimumStock: 0,
+      storageLocation: "",
+      manufacturingDate: "",
+      expirationDate: "",
+      receivedDate: "",
+      supplierContact: "",
+    });
     setMedModalOpen(true);
   }
 
@@ -383,13 +415,39 @@ export default function AdminApp() {
     const category = MEDICINE_CATEGORIES.includes(med.type as typeof MEDICINE_CATEGORIES[number])
       ? med.type
       : MEDICINE_CATEGORIES[0];
-    setMedForm({ name: med.name, type: category, stock: med.stock, available: med.available, expirationDate: med.expirationDate || "" });
+    setMedForm({
+      name: med.name,
+      type: category,
+      stock: med.stock,
+      available: med.available,
+      genericName: med.genericName || "",
+      dosageStrength: med.dosageStrength || "",
+      dosageForm: med.dosageForm || "",
+      unitOfMeasurement: med.unitOfMeasurement || "",
+      batchNumber: med.batchNumber || "",
+      minimumStock: med.minimumStock || 0,
+      storageLocation: med.storageLocation || "",
+      manufacturingDate: med.manufacturingDate || "",
+      expirationDate: med.expirationDate || "",
+      receivedDate: med.receivedDate || "",
+      supplierContact: med.supplierContact || "",
+    });
     setMedModalOpen(true);
   }
 
   async function handleMedSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!medForm.name.trim() || !medForm.type.trim() || !medForm.expirationDate) {
+    if (
+      !medForm.name.trim()
+      || !medForm.genericName.trim()
+      || !medForm.type.trim()
+      || !medForm.dosageStrength.trim()
+      || !medForm.dosageForm.trim()
+      || !medForm.unitOfMeasurement.trim()
+      || !medForm.batchNumber.trim()
+      || !medForm.expirationDate
+      || !medForm.receivedDate
+    ) {
       showToast("Please fill all required fields", "error");
       return;
     }
@@ -1079,7 +1137,7 @@ export default function AdminApp() {
       {/* ════════════ MEDICINE MODAL ════════════ */}
       {medModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50 p-4" onClick={() => setMedModalOpen(false)}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl modal-show" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-xl modal-show" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-5 border-b border-emerald-50 flex items-start justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{editingMed ? "Edit Medicine" : "Add New Medicine"}</h2>
@@ -1089,34 +1147,121 @@ export default function AdminApp() {
                 <XIcon className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleMedSubmit} className="space-y-5 p-6">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-800">Medicine Name <span className="text-red-500">*</span></label>
-                <input value={medForm.name} onChange={(e) => setMedForm((p) => ({ ...p, name: e.target.value }))} required
-                  placeholder="e.g., Paracetamol 500mg"
-                  className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-800">Category <span className="text-red-500">*</span></label>
-                <select value={medForm.type} onChange={(e) => setMedForm((p) => ({ ...p, type: e.target.value }))} required
-                  className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-white focus:border-emerald-700 focus:outline-none text-base">
-                  {MEDICINE_CATEGORIES.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-800">Quantity</label>
-                <input type="number" min="0" value={medForm.stock}
-                  onChange={(e) => setMedForm((p) => ({ ...p, stock: Math.max(0, parseInt(e.target.value) || 0) }))}
-                  className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-800">Expiration Date <span className="text-red-500">*</span></label>
-                <input type="date" value={medForm.expirationDate}
-                  onChange={(e) => setMedForm((p) => ({ ...p, expirationDate: e.target.value }))} required
-                  className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
-              </div>
+            <form onSubmit={handleMedSubmit} className="p-6 space-y-6">
+              <section>
+                <h3 className="text-lg font-bold text-gray-900 pb-3 border-b border-gray-100 mb-4">Medicine Information</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Medicine Name <span className="text-red-500">*</span></label>
+                    <input value={medForm.name} onChange={(e) => setMedForm((p) => ({ ...p, name: e.target.value }))} required
+                      placeholder="e.g., Paracetamol"
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Generic Name <span className="text-red-500">*</span></label>
+                    <input value={medForm.genericName} onChange={(e) => setMedForm((p) => ({ ...p, genericName: e.target.value }))} required
+                      placeholder="e.g., Paracetamol"
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Category <span className="text-red-500">*</span></label>
+                    <select value={medForm.type} onChange={(e) => setMedForm((p) => ({ ...p, type: e.target.value }))} required
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-white focus:border-emerald-700 focus:outline-none text-base">
+                      {MEDICINE_CATEGORIES.map((category) => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Dosage / Strength <span className="text-red-500">*</span></label>
+                    <input value={medForm.dosageStrength} onChange={(e) => setMedForm((p) => ({ ...p, dosageStrength: e.target.value }))} required
+                      placeholder="e.g., 500 mg"
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Dosage Form <span className="text-red-500">*</span></label>
+                    <select value={medForm.dosageForm} onChange={(e) => setMedForm((p) => ({ ...p, dosageForm: e.target.value }))} required
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-white focus:border-emerald-700 focus:outline-none text-base">
+                      <option value="">Select form</option>
+                      {["Tablet","Capsule","Syrup","Suspension","Injection","Cream","Ointment","Drops","Inhaler"].map((form) => <option key={form} value={form}>{form}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Unit of Measurement <span className="text-red-500">*</span></label>
+                    <select value={medForm.unitOfMeasurement} onChange={(e) => setMedForm((p) => ({ ...p, unitOfMeasurement: e.target.value }))} required
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-white focus:border-emerald-700 focus:outline-none text-base">
+                      <option value="">Select unit</option>
+                      {["Piece","Tablet","Capsule","Bottle","Tube","Ampoule","Vial","Box","ml","L"].map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-lg font-bold text-gray-900 pb-3 border-b border-gray-100 mb-4">Inventory Details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Batch Number <span className="text-red-500">*</span></label>
+                    <input value={medForm.batchNumber} onChange={(e) => setMedForm((p) => ({ ...p, batchNumber: e.target.value }))} required
+                      placeholder="Enter batch number"
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Initial Stock <span className="text-red-500">*</span></label>
+                    <input type="number" min="0" value={medForm.stock} required
+                      onChange={(e) => setMedForm((p) => ({ ...p, stock: Math.max(0, parseInt(e.target.value) || 0) }))}
+                      placeholder="Enter quantity"
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Minimum Stock Level</label>
+                    <input type="number" min="0" value={medForm.minimumStock}
+                      onChange={(e) => setMedForm((p) => ({ ...p, minimumStock: Math.max(0, parseInt(e.target.value) || 0) }))}
+                      placeholder="e.g., 20"
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Storage Location</label>
+                    <input value={medForm.storageLocation} onChange={(e) => setMedForm((p) => ({ ...p, storageLocation: e.target.value }))}
+                      placeholder="e.g., Shelf A1"
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-lg font-bold text-gray-900 pb-3 border-b border-gray-100 mb-4">Expiration Details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Manufacturing Date</label>
+                    <input type="date" value={medForm.manufacturingDate}
+                      onChange={(e) => setMedForm((p) => ({ ...p, manufacturingDate: e.target.value }))}
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-800">Expiration Date <span className="text-red-500">*</span></label>
+                    <input type="date" value={medForm.expirationDate} required
+                      onChange={(e) => setMedForm((p) => ({ ...p, expirationDate: e.target.value }))}
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <label className="text-sm font-semibold text-gray-800">Received Date <span className="text-red-500">*</span></label>
+                    <input type="date" value={medForm.receivedDate} required
+                      onChange={(e) => setMedForm((p) => ({ ...p, receivedDate: e.target.value }))}
+                      className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-lg font-bold text-gray-900 pb-3 border-b border-gray-100 mb-4">Supplier Information</h3>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-800">Supplier Contact</label>
+                  <input value={medForm.supplierContact} onChange={(e) => setMedForm((p) => ({ ...p, supplierContact: e.target.value }))}
+                    placeholder="Enter contact information"
+                    className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+                </div>
+              </section>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setMedModalOpen(false)}
                   className="flex-1 h-12 border-2 border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-semibold">
@@ -1125,7 +1270,7 @@ export default function AdminApp() {
                 <button type="submit" disabled={medLoading}
                   className="flex-1 h-12 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white rounded-xl font-semibold flex items-center justify-center gap-2">
                   {medLoading && <SpinnerIcon className="w-4 h-4 animate-spin" />}
-                  {editingMed ? "Update Medicine" : "Add Medicine"}
+                  {editingMed ? "Save Medicine" : "Save Medicine"}
                 </button>
               </div>
             </form>

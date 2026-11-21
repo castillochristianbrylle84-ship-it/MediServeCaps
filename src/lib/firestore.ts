@@ -37,7 +37,17 @@ export interface StockItem {
   type: string;
   stock: number;
   available: boolean;
+  genericName?: string;
+  dosageStrength?: string;
+  dosageForm?: string;
+  unitOfMeasurement?: string;
+  batchNumber?: string;
+  minimumStock?: number;
+  storageLocation?: string;
+  manufacturingDate?: string;
   expirationDate?: string;
+  receivedDate?: string;
+  supplierContact?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
