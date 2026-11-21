@@ -425,6 +425,7 @@ export default function AdminApp() {
   }
 
   function openQueueEntry(entry: QueueEntry) {
+    if (entry.status === "served") return;
     setSelectedEntry(entry);
     setModalOpen(true);
   }
@@ -702,10 +703,13 @@ export default function AdminApp() {
                           const sc = STATUS_CONFIG[entry.status];
                           const isPWD = entry.patientType === "pwd";
                           return (
-                            <tr key={entry.id} role="button" tabIndex={0}
-                              className={`hover:bg-emerald-50/40 cursor-pointer focus:outline-none focus:bg-emerald-50 ${isPWD ? "bg-blue-50/20" : ""}`}
+                            <tr key={entry.id}
+                              role={entry.status === "served" ? undefined : "button"}
+                              tabIndex={entry.status === "served" ? undefined : 0}
+                              className={`${entry.status === "served" ? "cursor-default" : "hover:bg-emerald-50/40 cursor-pointer focus:outline-none focus:bg-emerald-50"} ${isPWD ? "bg-blue-50/20" : ""}`}
                               onClick={() => openQueueEntry(entry)}
                               onKeyDown={(event) => {
+                                if (entry.status === "served") return;
                                 if (event.key === "Enter" || event.key === " ") {
                                   event.preventDefault();
                                   openQueueEntry(entry);
@@ -755,10 +759,13 @@ export default function AdminApp() {
                       const sc = STATUS_CONFIG[entry.status];
                       const isPWD = entry.patientType === "pwd";
                       return (
-                        <div key={entry.id} role="button" tabIndex={0}
-                          className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        <div key={entry.id}
+                          role={entry.status === "served" ? undefined : "button"}
+                          tabIndex={entry.status === "served" ? undefined : 0}
+                          className={`bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm ${entry.status === "served" ? "cursor-default" : "cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"}`}
                           onClick={() => openQueueEntry(entry)}
                           onKeyDown={(event) => {
+                            if (entry.status === "served") return;
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
                               openQueueEntry(entry);
