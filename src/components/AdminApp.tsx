@@ -424,6 +424,11 @@ export default function AdminApp() {
     }
   }
 
+  function openQueueEntry(entry: QueueEntry) {
+    setSelectedEntry(entry);
+    setModalOpen(true);
+  }
+
   // ─── Computed values ──────────────────────────────────────────────────────
   const sortedEntries = [...entries].sort((a, b) => {
     if (a.patientType === "pwd" && b.patientType !== "pwd") return -1;
@@ -697,8 +702,15 @@ export default function AdminApp() {
                           const sc = STATUS_CONFIG[entry.status];
                           const isPWD = entry.patientType === "pwd";
                           return (
-                            <tr key={entry.id} className={`hover:bg-emerald-50/40 cursor-pointer ${isPWD ? "bg-blue-50/20" : ""}`}
-                              onClick={() => { setSelectedEntry(entry); setModalOpen(true); }}>
+                            <tr key={entry.id} role="button" tabIndex={0}
+                              className={`hover:bg-emerald-50/40 cursor-pointer focus:outline-none focus:bg-emerald-50 ${isPWD ? "bg-blue-50/20" : ""}`}
+                              onClick={() => openQueueEntry(entry)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  openQueueEntry(entry);
+                                }
+                              }}>
                               <td className="px-6 py-4">
                                 <span className={`text-xl font-black ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</span>
                               </td>
@@ -743,8 +755,15 @@ export default function AdminApp() {
                       const sc = STATUS_CONFIG[entry.status];
                       const isPWD = entry.patientType === "pwd";
                       return (
-                        <div key={entry.id} className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm cursor-pointer"
-                          onClick={() => { setSelectedEntry(entry); setModalOpen(true); }}>
+                        <div key={entry.id} role="button" tabIndex={0}
+                          className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          onClick={() => openQueueEntry(entry)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openQueueEntry(entry);
+                            }
+                          }}>
                           <div className="flex items-start justify-between mb-3">
                             <div>
                               <span className={`text-2xl font-black ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</span>
