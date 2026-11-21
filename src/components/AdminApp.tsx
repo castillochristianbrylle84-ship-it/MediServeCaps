@@ -220,7 +220,7 @@ export default function AdminApp() {
   // Medicine modal state
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed]     = useState<StockItem | null>(null);
-  const [medForm, setMedForm] = useState({ name: "", type: "", stock: 0, available: true });
+  const [medForm, setMedForm] = useState({ name: "", type: "", stock: 0, available: true, expirationDate: "" });
   const [medLoading, setMedLoading] = useState(false);
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
   const alertedLowStockIds = useRef(new Set<string>());
@@ -374,7 +374,7 @@ export default function AdminApp() {
   // ─── Medicine actions ─────────────────────────────────────────────────────
   function openAddMed(category = medicineTypeFilter === "all" ? MEDICINE_CATEGORIES[0] : medicineTypeFilter) {
     setEditingMed(null);
-    setMedForm({ name: "", type: MEDICINE_CATEGORIES.includes(category as typeof MEDICINE_CATEGORIES[number]) ? category : MEDICINE_CATEGORIES[0], stock: 0, available: true });
+    setMedForm({ name: "", type: MEDICINE_CATEGORIES.includes(category as typeof MEDICINE_CATEGORIES[number]) ? category : MEDICINE_CATEGORIES[0], stock: 0, available: true, expirationDate: "" });
     setMedModalOpen(true);
   }
 
@@ -383,13 +383,13 @@ export default function AdminApp() {
     const category = MEDICINE_CATEGORIES.includes(med.type as typeof MEDICINE_CATEGORIES[number])
       ? med.type
       : MEDICINE_CATEGORIES[0];
-    setMedForm({ name: med.name, type: category, stock: med.stock, available: med.available });
+    setMedForm({ name: med.name, type: category, stock: med.stock, available: med.available, expirationDate: med.expirationDate || "" });
     setMedModalOpen(true);
   }
 
   async function handleMedSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!medForm.name.trim() || !medForm.type.trim()) {
+    if (!medForm.name.trim() || !medForm.type.trim() || !medForm.expirationDate) {
       showToast("Please fill all required fields", "error");
       return;
     }
@@ -1109,6 +1109,12 @@ export default function AdminApp() {
                 <label className="text-sm font-semibold text-gray-800">Quantity</label>
                 <input type="number" min="0" value={medForm.stock}
                   onChange={(e) => setMedForm((p) => ({ ...p, stock: Math.max(0, parseInt(e.target.value) || 0) }))}
+                  className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-800">Expiration Date <span className="text-red-500">*</span></label>
+                <input type="date" value={medForm.expirationDate}
+                  onChange={(e) => setMedForm((p) => ({ ...p, expirationDate: e.target.value }))} required
                   className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
               </div>
               <div className="flex gap-3 pt-2">

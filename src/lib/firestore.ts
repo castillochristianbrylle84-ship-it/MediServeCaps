@@ -37,6 +37,7 @@ export interface StockItem {
   type: string;
   stock: number;
   available: boolean;
+  expirationDate?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
