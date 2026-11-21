@@ -235,7 +235,6 @@ export default function AdminApp() {
     manufacturingDate: "",
     expirationDate: "",
     receivedDate: "",
-    supplierContact: "",
   });
   const [medLoading, setMedLoading] = useState(false);
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
@@ -405,7 +404,6 @@ export default function AdminApp() {
       manufacturingDate: "",
       expirationDate: "",
       receivedDate: "",
-      supplierContact: "",
     });
     setMedModalOpen(true);
   }
@@ -430,7 +428,6 @@ export default function AdminApp() {
       manufacturingDate: med.manufacturingDate || "",
       expirationDate: med.expirationDate || "",
       receivedDate: med.receivedDate || "",
-      supplierContact: med.supplierContact || "",
     });
     setMedModalOpen(true);
   }
@@ -1253,15 +1250,6 @@ export default function AdminApp() {
                 </div>
               </section>
 
-              <section>
-                <h3 className="text-lg font-bold text-gray-900 pb-3 border-b border-gray-100 mb-4">Supplier Information</h3>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-800">Supplier Contact</label>
-                  <input value={medForm.supplierContact} onChange={(e) => setMedForm((p) => ({ ...p, supplierContact: e.target.value }))}
-                    placeholder="Enter contact information"
-                    className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:border-emerald-700 focus:outline-none text-base" />
-                </div>
-              </section>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setMedModalOpen(false)}
                   className="flex-1 h-12 border-2 border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-semibold">

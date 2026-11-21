@@ -47,7 +47,6 @@ export interface StockItem {
   manufacturingDate?: string;
   expirationDate?: string;
   receivedDate?: string;
-  supplierContact?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
