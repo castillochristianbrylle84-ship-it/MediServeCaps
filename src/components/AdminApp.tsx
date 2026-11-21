@@ -318,12 +318,36 @@ export default function AdminApp() {
   }, [user]);
 
   useEffect(() => {
-    if (
-      !user ||
-      reportPeriod !== "custom" ||
-      !reportStartDate ||
-      !reportEndDate
-    ) {
+    if (!user || reportPeriod === "daily") {
+      setReportHistoryEntries([]);
+      setReportHistoryLoading(false);
+      return;
+    }
+
+    let startDate = reportStartDate;
+    let endDate = reportEndDate;
+    if (reportPeriod !== "custom") {
+      const now = new Date();
+      const start = new Date(now);
+      if (reportPeriod === "weekly") {
+        start.setDate(now.getDate() - 6);
+      } else if (reportPeriod === "monthly") {
+        start.setDate(1);
+      } else {
+        start.setMonth(0, 1);
+      }
+      start.setHours(0, 0, 0, 0);
+      const toDateInput = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      };
+      startDate = toDateInput(start);
+      endDate = toDateInput(now);
+    }
+
+    if (!startDate || !endDate || startDate > endDate) {
       setReportHistoryEntries([]);
       setReportHistoryLoading(false);
       return;
@@ -332,15 +356,15 @@ export default function AdminApp() {
     let active = true;
     setReportHistoryEntries([]);
     setReportHistoryLoading(true);
-    getQueueEntriesForDateRange(reportStartDate, reportEndDate)
+    getQueueEntriesForDateRange(startDate, endDate)
       .then((historicalEntries) => {
         if (active) setReportHistoryEntries(historicalEntries);
       })
       .catch((error: unknown) => {
-        console.error("Could not load dispensing report for selected dates:", error);
+        console.error("Could not load dispensing report for the selected period:", error);
         if (active) {
           setReportHistoryEntries([]);
-          showToast("Could not load the dispensing report for those dates", "error");
+          showToast("Could not load the dispensing report for this period", "error");
         }
       })
       .finally(() => {
@@ -554,7 +578,7 @@ export default function AdminApp() {
     ? medicines
     : medicines.filter((med) => med.type.trim() === medicineTypeFilter);
 
-  const reportSourceEntries = reportPeriod === "custom" ? reportHistoryEntries : entries;
+  const reportSourceEntries = reportPeriod === "daily" ? entries : reportHistoryEntries;
   const reportEntries = reportSourceEntries.filter((entry) => {
     if (entry.status !== "served" && !entry.wasServed) return false;
     const entryDate = new Date(entry.dispensedAt ?? entry.timestamp);
