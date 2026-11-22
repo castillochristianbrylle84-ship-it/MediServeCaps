@@ -759,7 +759,7 @@ export default function AdminApp() {
   // MAIN RENDER
   // ═══════════════════════════════════════════════════════════════════════════
   return (
-    <div className="admin-app bg-gray-50 min-h-screen text-gray-900 font-sans">
+    <div className="admin-app h-dvh overflow-hidden bg-gray-50 text-gray-900 font-sans">
 
       {/* ── Toast Stack ── */}
       <div className="fixed top-4 right-4 z-50 w-[calc(100%-2rem)] max-w-sm space-y-2 pointer-events-none">
@@ -771,10 +771,10 @@ export default function AdminApp() {
         ))}
       </div>
 
-      <div className="flex min-h-screen">
+      <div className="flex h-full min-h-0 overflow-hidden">
 
         {/* ── Desktop Sidebar ── */}
-        <aside className="hidden lg:flex w-72 shrink-0 flex-col border-r border-gray-200 bg-white sticky top-0 h-screen">
+        <aside className="hidden lg:flex h-full w-72 shrink-0 flex-col border-r border-gray-200 bg-white">
           {Sidebar}
         </aside>
 
@@ -789,7 +789,7 @@ export default function AdminApp() {
         )}
 
         {/* ── Main Content ── */}
-        <main className="flex-1 min-w-0">
+        <main className="h-full min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
 
           {/* Mobile Top Bar */}
           <div className="lg:hidden bg-white border-b border-gray-200 px-3 sm:px-4 py-3 flex items-center gap-2 sm:gap-3 sticky top-0 z-30">
