@@ -531,7 +531,7 @@ export default function CustomerApp() {
       {/* ════════════════ HISTORY PAGE ════════════════ */}
       {page === "history" && (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white pb-12">
-          <div className="bg-[#166534] text-white py-6 px-6 shadow-lg">
+          <div className="bg-[#166534] text-white py-6 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center gap-3 max-w-2xl lg:max-w-4xl mx-auto">
               <button onClick={() => navigate("home")} className="text-white hover:bg-white/20 p-2 rounded-xl" aria-label="Back to home">
                 <ArrowLeftIcon className="w-6 h-6" />
@@ -543,7 +543,7 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-6 py-8 max-w-2xl lg:max-w-4xl mx-auto">
+          <div className="px-4 sm:px-6 py-8 max-w-2xl lg:max-w-4xl mx-auto">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Your Queue Numbers</h2>
             {historyEntries.length === 0 ? (
               <div className="bg-white rounded-2xl p-6 text-center text-gray-500 shadow-sm">
@@ -573,7 +573,7 @@ export default function CustomerApp() {
       {/* ════════════════ REGISTER PAGE ════════════════ */}
       {page === "register" && (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white pb-10">
-          <div className="bg-[#166534] text-white py-6 px-6 shadow-lg">
+          <div className="bg-[#166534] text-white py-6 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center gap-3">
               <button onClick={() => navigate("home")} className="text-white hover:bg-white/20 p-2 rounded-xl">
                 <ArrowLeftIcon className="w-6 h-6" />
@@ -590,7 +590,7 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-6 py-8 max-w-2xl lg:max-w-3xl mx-auto">
+          <div className="px-4 sm:px-6 py-8 max-w-2xl lg:max-w-3xl mx-auto">
             <form onSubmit={handleSubmit} className="space-y-8">
 
               {/* Name */}
@@ -650,7 +650,7 @@ export default function CustomerApp() {
               {/* Patient Type */}
               <div className="space-y-3">
                 <label className="text-base font-semibold text-gray-800">Patient Type <span className="text-red-500">*</span></label>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-4">
                   <button type="button" onClick={() => setForm((p) => ({ ...p, patientType: "regular" }))}
                     className={`flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-2 transition-all duration-200 min-h-[120px] ${
                       form.patientType === "regular"
@@ -796,7 +796,7 @@ export default function CustomerApp() {
       {page === "queue" && currentEntry && (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
           {/* Header */}
-          <div className={`text-white py-6 px-6 shadow-lg ${currentEntry.patientType === "pwd" ? "bg-blue-700" : "bg-[#166534]"}`}>
+          <div className={`text-white py-6 px-4 sm:px-6 shadow-lg ${currentEntry.patientType === "pwd" ? "bg-blue-700" : "bg-[#166534]"}`}>
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${currentEntry.patientType === "pwd" ? "bg-blue-300" : "bg-[#4ade80]"}`}>
                 {currentEntry.patientType === "pwd"
@@ -812,22 +812,22 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-6 py-8 max-w-2xl lg:max-w-4xl mx-auto">
+          <div className="px-4 sm:px-6 py-8 max-w-2xl lg:max-w-4xl mx-auto">
             {/* Queue Card */}
             <div className={`rounded-3xl overflow-hidden shadow-2xl mb-6 ${currentEntry.patientType === "pwd" ? "bg-gradient-to-br from-blue-700 to-blue-900" : "bg-gradient-to-br from-[#166534] to-[#14532d]"}`}>
-              <div className="px-6 pt-6 flex justify-end">
+              <div className="px-4 sm:px-6 pt-6 flex justify-end">
                 <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold ${currentEntry.patientType === "pwd" ? "bg-blue-300 text-blue-900" : "bg-[#4ade80] text-[#166534]"}`}>
                   {currentEntry.patientType === "pwd" ? "PWD Priority" : "Regular"}
                 </span>
               </div>
-              <div className="text-center px-6 pt-4 pb-6">
+              <div className="text-center px-4 sm:px-6 pt-4 pb-6">
                 <p className={`mb-2 text-sm font-medium ${currentEntry.patientType === "pwd" ? "text-blue-300" : "text-green-300"}`}>Queue Number</p>
-                <div className={`text-8xl font-black mb-3 tracking-tight ${currentEntry.patientType === "pwd" ? "text-blue-200" : "text-[#4ade80]"}`}>
+                <div className={`text-[clamp(2rem,12vw,6rem)] font-black mb-3 tracking-tight break-words ${currentEntry.patientType === "pwd" ? "text-blue-200" : "text-[#4ade80]"}`}>
                   {currentEntry.queueNumber}
                 </div>
                 <div className={`w-24 h-1.5 mx-auto rounded-full ${currentEntry.patientType === "pwd" ? "bg-blue-400" : "bg-[#4ade80]"}`} />
               </div>
-              <div className="px-6 pb-8 space-y-4 text-white">
+              <div className="px-4 sm:px-6 pb-8 space-y-4 text-white">
                 <InfoRow icon={<UserIcon className={`w-5 h-5 ${currentEntry.patientType === "pwd" ? "text-blue-300" : "text-[#4ade80]"}`} />}
                   label="Patient Name" labelColor={currentEntry.patientType === "pwd" ? "text-blue-300" : "text-green-300"}
                   value={currentEntry.patientName} />
@@ -868,7 +868,7 @@ export default function CustomerApp() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-4 mb-4">
               <button onClick={saveToPhone}
                 className="h-14 border-2 border-[#166534] text-[#166534] hover:bg-[#166534] hover:text-white rounded-xl flex items-center justify-center font-medium">
                 <DownloadIcon className="w-5 h-5 mr-2" /> Save to Phone
@@ -911,7 +911,7 @@ export default function CustomerApp() {
       {/* ════════════════ TRACK PAGE ════════════════ */}
       {page === "track" && currentEntry && (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white pb-12">
-          <div className="bg-[#166534] text-white py-6 px-6 shadow-lg">
+          <div className="bg-[#166534] text-white py-6 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center gap-3">
               <button onClick={() => navigate("queue", currentEntry.id)} className="text-white hover:bg-white/20 p-2 rounded-xl" aria-label="Back to your queue number">
                 <ArrowLeftIcon className="w-6 h-6" />
@@ -923,17 +923,17 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-6 pt-8 max-w-2xl lg:max-w-4xl mx-auto">
+          <div className="px-4 sm:px-6 pt-8 max-w-2xl lg:max-w-4xl mx-auto">
             <div className="text-center mb-10">
               <p className="text-gray-500 text-sm font-medium">YOUR QUEUE NUMBER</p>
-              <p className="text-7xl font-bold text-[#166534] tracking-tighter mt-2">{currentEntry.queueNumber}</p>
+              <p className="text-[clamp(2rem,10vw,4.5rem)] font-bold text-[#166534] tracking-tighter mt-2 break-words">{currentEntry.queueNumber}</p>
               {currentEntry.patientType === "pwd" && (
                 <span className="inline-block mt-3 px-5 py-1 bg-blue-100 text-blue-700 text-sm font-semibold rounded-full">PWD – PRIORITY</span>
               )}
             </div>
 
             {/* Status Steps */}
-            <div className="bg-white rounded-3xl p-8 mb-8 shadow-sm border border-gray-200">
+            <div className="bg-white rounded-3xl p-4 sm:p-8 mb-8 shadow-sm border border-gray-200">
               <div className="flex justify-between relative mb-10">
                 {STATUS_STEPS.map((step, i) => {
                   const currentIndex = STATUS_STEPS.findIndex((s) => s.key === currentEntry.status);
@@ -955,7 +955,7 @@ export default function CustomerApp() {
               </div>
 
               {/* Status Message */}
-              <div className={`text-center p-8 rounded-2xl text-lg font-semibold leading-relaxed ${
+              <div className={`text-center p-4 sm:p-8 rounded-2xl text-lg font-semibold leading-relaxed ${
                 currentEntry.status === "getready" ? "bg-amber-100 text-amber-700 border-2 border-amber-400" :
                 currentEntry.status === "served"   ? "bg-green-100 text-green-700" :
                 currentEntry.status === "processing" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"
@@ -1016,7 +1016,7 @@ export default function CustomerApp() {
       {(page === "queue" || page === "track") && !currentEntry && (
         <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
           <p className="text-gray-500 text-lg">Entry not found. Please register again.</p>
-          <button onClick={() => navigate("home")} className="px-6 py-3 bg-[#166534] text-white rounded-xl font-semibold">
+          <button onClick={() => navigate("home")} className="px-4 sm:px-6 py-3 bg-[#166534] text-white rounded-xl font-semibold">
             Back to Home
           </button>
         </div>

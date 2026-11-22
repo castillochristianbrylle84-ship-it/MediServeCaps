@@ -75,21 +75,3 @@
   }
 }
 
-@media (max-width: 419px) {
-  .customer-app [class*="grid-cols-2"] {
-    grid-template-columns: 1fr;
-  }
-
-  .customer-app [class*="text-8xl"] {
-    font-size: 4.5rem;
-  }
-
-  .customer-app [class*="p-8"] {
-    padding: 1rem;
-  }
-
-  .customer-app [class*="px-6"] {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-}
