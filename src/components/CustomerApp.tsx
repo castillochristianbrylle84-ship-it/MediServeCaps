@@ -318,14 +318,17 @@ export default function CustomerApp() {
   }
 
   // ─── Save queue details as an image ────────────────────────────────────────
-  function saveToPhone() {
+  async function saveToPhone() {
     if (!currentEntry) return;
     const totalQty = currentEntry.quantities.reduce((a, b) => a + b, 0);
     const canvas = document.createElement("canvas");
     canvas.width = 900;
     canvas.height = 760;
     const context = canvas.getContext("2d");
-    if (!context) return;
+    if (!context) {
+      showToast("Could not create the queue image. Please try again.", "error");
+      return;
+    }
 
     context.fillStyle = currentEntry.patientType === "pwd" ? "#1d4ed8" : "#166534";
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -352,11 +355,47 @@ export default function CustomerApp() {
     context.font = "24px sans-serif";
     context.fillText("Please wait for your number to be called.", canvas.width / 2, 700);
 
-    const a = document.createElement("a");
-    a.href = canvas.toDataURL("image/png");
-    a.download = `queue-${currentEntry.queueNumber}.png`;
-    a.click();
-    showToast("Queue details saved!");
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      const base64 = dataUrl.split(",")[1];
+      if (!base64) throw new Error("The queue image could not be created.");
+      const binary = window.atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      const blob = new Blob([bytes], { type: "image/png" });
+
+      const fileName = `queue-${currentEntry.queueNumber}.png`;
+      if (typeof File !== "undefined" && typeof navigator.share === "function") {
+        const file = new File([blob], fileName, { type: "image/png" });
+        const shareData: ShareData = { files: [file], title: "MediServe queue details" };
+        if (!navigator.canShare || navigator.canShare(shareData)) {
+          try {
+            const shareResult = navigator.share(shareData);
+            await shareResult;
+            showToast("Image ready to save. Choose Save Image or Save to Files.");
+            return;
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") return;
+            console.error("Could not share queue image:", error);
+          }
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("Image download started. Check your Downloads or Photos.");
+    } catch (error) {
+      console.error("Could not save queue image:", error);
+      showToast("Could not save the queue image. Please try again.", "error");
+    }
   }
 
   const availableMeds = medicines.filter((m) => m.available);
