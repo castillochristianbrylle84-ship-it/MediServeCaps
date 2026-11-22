@@ -473,7 +473,7 @@ export default function CustomerApp() {
                   <SearchIcon className="w-4 h-4" /> Search
                 </button>
               </form>
-              <div className="grid gap-3">
+              <div className="grid gap-3 lg:grid-cols-2">
                 {searchedAvailableMeds.length === 0 ? (
                   <p className="text-gray-500 text-center py-4">{availableMeds.length === 0 ? "No medicines currently available" : "No medicines match your search"}</p>
                 ) : searchedAvailableMeds.map((med, i) => (
