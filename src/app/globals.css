@@ -35,3 +35,61 @@
 .toast-anim-out{ animation: toastOut .25s ease-in forwards; }
 .modal-show    { animation: modalIn .12s ease-out; }
 .animate-spin  { animation: spin 1s linear infinite; }
+
+.customer-app,
+.customer-app * {
+  box-sizing: border-box;
+}
+
+.customer-app {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.customer-app input,
+.customer-app button {
+  touch-action: manipulation;
+}
+
+@media (max-width: 639px) {
+  .customer-app .fixed.bottom-0 {
+    padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .customer-app .fixed.bottom-0 > div {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .customer-app .fixed.bottom-0 button {
+    height: 56px;
+  }
+
+  .customer-app .fixed.bottom-0 button:first-child {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .customer-app .fixed.bottom-0 button:last-child {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 419px) {
+  .customer-app [class*="grid-cols-2"] {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-app [class*="text-8xl"] {
+    font-size: 4.5rem;
+  }
+
+  .customer-app [class*="p-8"] {
+    padding: 1rem;
+  }
+
+  .customer-app [class*="px-6"] {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}

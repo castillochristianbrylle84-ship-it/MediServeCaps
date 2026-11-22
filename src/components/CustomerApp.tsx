@@ -412,13 +412,13 @@ export default function CustomerApp() {
   // RENDER
   // ═══════════════════════════════════════════════════════════════════════════
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="customer-app bg-gray-50 min-h-screen">
 
       {/* ── Toast Stack ── */}
-      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 space-y-2 pointer-events-none">
+      <div className="fixed top-4 sm:top-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-md space-y-2 pointer-events-none">
         {toasts.map((t) => (
           <div key={t.id}
-            className={`toast px-6 py-3 rounded-2xl shadow-xl text-white font-medium pointer-events-auto ${
+            className={`toast w-full px-4 sm:px-6 py-3 rounded-2xl shadow-xl text-white text-center font-medium pointer-events-auto ${
               t.type === "error" ? "bg-red-500" : "bg-[#166534]"
             }`}>{t.msg}</div>
         ))}
@@ -428,27 +428,27 @@ export default function CustomerApp() {
       {page === "home" && (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
           {/* Header */}
-          <div className="bg-[#166534] text-white py-8 px-6 shadow-lg">
+          <div className="bg-[#166534] text-white py-5 sm:py-8 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center justify-between max-w-2xl mx-auto">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#4ade80] rounded-full flex items-center justify-center">
-                  <PillIcon className="w-7 h-7 text-[#166534]" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#4ade80] rounded-full flex items-center justify-center flex-shrink-0">
+                  <PillIcon className="w-6 h-6 sm:w-7 sm:h-7 text-[#166534]" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold">MediServe</h1>
-                  <p className="text-green-200 text-sm">City Health Pharmacy</p>
+                  <h1 className="text-xl sm:text-2xl font-bold">MediServe</h1>
+                  <p className="text-green-200 text-xs sm:text-sm">City Health Pharmacy</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="px-6 py-6 max-w-2xl mx-auto">
-            <div className="mb-8 slide-up" style={{ animationDelay: "0.1s" }}>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome</h2>
-              <p className="text-gray-600">Get your queue number and wait comfortably for your turn</p>
+          <div className="px-4 sm:px-6 py-5 sm:py-6 max-w-2xl mx-auto">
+            <div className="mb-6 sm:mb-8 slide-up" style={{ animationDelay: "0.1s" }}>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Welcome</h2>
+              <p className="text-sm sm:text-base text-gray-600">Get your queue number and wait comfortably for your turn</p>
             </div>
 
-            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg mb-8 slide-up" style={{ animationDelay: "0.2s" }}>
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg mb-6 sm:mb-8 slide-up" style={{ animationDelay: "0.2s" }}>
               <div className="flex gap-3">
                 <AlertIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div>
@@ -458,9 +458,9 @@ export default function CustomerApp() {
               </div>
             </div>
 
-            <div className="mb-8 slide-up" style={{ animationDelay: "0.3s" }}>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Currently Available Medicines</h3>
-              <form onSubmit={(e) => { e.preventDefault(); setAvailableSearch(availableSearchInput); }} className="flex gap-2 mb-4">
+            <div className="mb-6 sm:mb-8 slide-up" style={{ animationDelay: "0.3s" }}>
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Currently Available Medicines</h3>
+              <form onSubmit={(e) => { e.preventDefault(); setAvailableSearch(availableSearchInput); }} className="flex flex-col min-[420px]:flex-row gap-2 mb-4">
                 <input
                   type="search"
                   value={availableSearchInput}
@@ -469,7 +469,7 @@ export default function CustomerApp() {
                   aria-label="Search currently available medicines by name or type"
                   className="min-w-0 flex-1 h-11 px-4 rounded-xl border border-gray-300 focus:outline-none focus:border-[#166534]"
                 />
-                <button type="submit" className="h-11 px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-semibold flex items-center gap-2">
+                <button type="submit" className="h-11 w-full min-[420px]:w-auto px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-semibold flex items-center justify-center gap-2">
                   <SearchIcon className="w-4 h-4" /> Search
                 </button>
               </form>
@@ -478,18 +478,18 @@ export default function CustomerApp() {
                   <p className="text-gray-500 text-center py-4">{availableMeds.length === 0 ? "No medicines currently available" : "No medicines match your search"}</p>
                 ) : searchedAvailableMeds.map((med, i) => (
                   <div key={med.id} className="slide-in-left" style={{ animationDelay: `${0.4 + i * 0.05}s` }}>
-                    <div className="bg-white border-l-4 border-l-[#4ade80] p-4 rounded-xl hover:shadow-md transition-shadow">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                    <div className="bg-white border-l-4 border-l-[#4ade80] p-3 sm:p-4 rounded-xl hover:shadow-md transition-shadow">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
                             <PillIcon className="w-5 h-5 text-[#166534]" />
                           </div>
-                          <div>
-                            <p className="font-semibold text-gray-900">{med.name}</p>
-                            <p className="text-sm text-gray-500">{med.type}</p>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 break-words">{med.name}</p>
+                            <p className="text-sm text-gray-500 break-words">{med.type}</p>
                           </div>
                         </div>
-                        <span className="inline-block px-3 py-1 bg-green-100 text-[#166534] rounded text-xs font-semibold">
+                        <span className="inline-block px-2 sm:px-3 py-1 bg-green-100 text-[#166534] rounded text-[10px] sm:text-xs font-semibold whitespace-nowrap">
                           Quantity: {med.stock}
                         </span>
                       </div>
