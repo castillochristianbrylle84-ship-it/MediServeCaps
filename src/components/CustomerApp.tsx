@@ -508,7 +508,7 @@ export default function CustomerApp() {
       {page === "home" && (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-green-50 to-white">
           {/* Header */}
-          <div className="shrink-0 bg-[#166534] text-white py-5 sm:py-8 px-4 sm:px-6 shadow-lg">
+          <div className="shrink-0 bg-[#166534] text-white py-3 sm:py-5 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center justify-between max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#4ade80] rounded-full flex items-center justify-center flex-shrink-0">
@@ -607,20 +607,20 @@ export default function CustomerApp() {
           </div>
           </div>
 
-          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4 shadow-lg">
+          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3 shadow-lg">
               {!queueRegistrationOpen && (
-                <p role="status" className="mx-auto mb-2 max-w-2xl text-center text-sm font-medium text-amber-800">
+                <p role="status" className="mx-auto mb-1 max-w-2xl text-center text-sm font-medium text-amber-800">
                   {QUEUE_REGISTRATION_HOURS_MESSAGE}
                 </p>
               )}
               <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto grid grid-cols-[auto_1fr] gap-3">
                 <button onClick={() => navigate("history")}
-                  className="h-14 px-3 sm:px-5 border-2 border-[#166534] text-[#166534] hover:bg-green-50 text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center gap-2">
+                  className="h-12 px-3 sm:px-5 border-2 border-[#166534] text-[#166534] hover:bg-green-50 text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center gap-2">
                   <ClockIcon className="w-5 h-5" />
                   History
                 </button>
                 <button onClick={() => navigate("register")} disabled={!queueRegistrationOpen}
-                  className="h-14 px-2 bg-[#166534] hover:bg-[#14532d] disabled:cursor-not-allowed disabled:opacity-50 text-base sm:text-lg font-semibold rounded-xl shadow-lg flex items-center justify-center gap-2">
+                  className="h-12 px-2 bg-[#166534] hover:bg-[#14532d] disabled:cursor-not-allowed disabled:opacity-50 text-base sm:text-lg font-semibold rounded-xl shadow-lg flex items-center justify-center gap-2">
                   Get My Queue Number
                   <ChevronRightIcon className="w-6 h-6" />
                 </button>
@@ -632,7 +632,7 @@ export default function CustomerApp() {
       {/* ════════════════ HISTORY PAGE ════════════════ */}
       {page === "history" && (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-green-50 to-white">
-          <div className="shrink-0 bg-[#166534] text-white py-6 px-4 sm:px-6 shadow-lg">
+          <div className="shrink-0 bg-[#166534] text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center gap-3 max-w-2xl md:max-w-4xl mx-auto">
               <button onClick={() => navigate("home")} className="text-white hover:bg-white/20 p-2 rounded-xl" aria-label="Back to home">
                 <ArrowLeftIcon className="w-6 h-6" />
@@ -671,10 +671,10 @@ export default function CustomerApp() {
           </div>
           </div>
 
-          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3">
             <div className="max-w-2xl md:max-w-4xl mx-auto">
               <button onClick={() => navigate("home")}
-                className="h-14 w-full rounded-xl border-2 border-[#166534] font-semibold text-[#166534] hover:bg-green-50">
+                className="h-12 w-full rounded-xl border-2 border-[#166534] font-semibold text-[#166534] hover:bg-green-50">
                 Back to Home
               </button>
             </div>
@@ -685,7 +685,7 @@ export default function CustomerApp() {
       {/* ════════════════ REGISTER PAGE ════════════════ */}
       {page === "register" && (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-green-50 to-white">
-          <div className="shrink-0 bg-[#166534] text-white py-6 px-4 sm:px-6 shadow-lg">
+          <div className="shrink-0 bg-[#166534] text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center gap-3">
               <button onClick={() => navigate("home")} className="text-white hover:bg-white/20 p-2 rounded-xl">
                 <ArrowLeftIcon className="w-6 h-6" />
@@ -913,15 +913,15 @@ export default function CustomerApp() {
           </div>
           </div>
 
-          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4 shadow-lg">
+          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3 shadow-lg">
             <div className="max-w-2xl md:max-w-3xl mx-auto">
               {!queueRegistrationOpen && (
-                <p role="status" className="mb-2 text-center text-sm font-medium text-amber-800">
+                <p role="status" className="mb-1 text-center text-sm font-medium text-amber-800">
                   {QUEUE_REGISTRATION_HOURS_MESSAGE}
                 </p>
               )}
               <button type="submit" form="queue-registration-form" disabled={isSubmitting || verifiedPhone !== form.phone || !queueRegistrationOpen}
-                className="w-full h-14 sm:h-16 bg-[#166534] hover:bg-[#14532d] disabled:cursor-not-allowed disabled:opacity-60 text-white text-base sm:text-lg font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
+                className="w-full h-12 sm:h-14 bg-[#166534] hover:bg-[#14532d] disabled:cursor-not-allowed disabled:opacity-60 text-white text-base sm:text-lg font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
                 <PillIcon className="w-6 h-6" />
                 {isSubmitting ? "Generating..." : queueRegistrationOpen ? "Get My Queue Number" : "Queue Registration Closed"}
               </button>
@@ -934,7 +934,7 @@ export default function CustomerApp() {
       {page === "queue" && currentEntry && (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-green-50 to-white">
           {/* Header */}
-          <div className={`shrink-0 text-white py-6 px-4 sm:px-6 shadow-lg ${currentEntry.patientType === "pwd" ? "bg-blue-700" : "bg-[#166534]"}`}>
+          <div className={`shrink-0 text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg ${currentEntry.patientType === "pwd" ? "bg-blue-700" : "bg-[#166534]"}`}>
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${currentEntry.patientType === "pwd" ? "bg-blue-300" : "bg-[#4ade80]"}`}>
                 {currentEntry.patientType === "pwd"
@@ -1042,10 +1042,10 @@ export default function CustomerApp() {
           </div>
           </div>
 
-          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3">
             <div className="max-w-2xl md:max-w-4xl mx-auto">
               <button onClick={() => navigate("home")}
-                className="h-14 w-full bg-[#166534] hover:bg-[#14532d] text-white font-semibold rounded-xl flex items-center justify-center">
+                className="h-12 w-full bg-[#166534] hover:bg-[#14532d] text-white font-semibold rounded-xl flex items-center justify-center">
                 <HomeIcon className="w-5 h-5 mr-2" /> Back to Home
               </button>
             </div>
@@ -1056,7 +1056,7 @@ export default function CustomerApp() {
       {/* ════════════════ TRACK PAGE ════════════════ */}
       {page === "track" && currentEntry && (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-green-50 to-white">
-          <div className="shrink-0 bg-[#166534] text-white py-6 px-4 sm:px-6 shadow-lg">
+          <div className="shrink-0 bg-[#166534] text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg">
             <div className="flex items-center gap-3">
               <button onClick={() => navigate("queue", currentEntry.id)} className="text-white hover:bg-white/20 p-2 rounded-xl" aria-label="Back to your queue number">
                 <ArrowLeftIcon className="w-6 h-6" />
@@ -1142,16 +1142,16 @@ export default function CustomerApp() {
           </div>
           </div>
 
-          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3">
             <div className="max-w-2xl md:max-w-4xl mx-auto space-y-2">
               <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2">
                 <button onClick={refreshStatus}
-                  className="h-12 sm:h-14 bg-[#166534] hover:bg-[#14532d] text-white text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center">
+                  className="h-12 bg-[#166534] hover:bg-[#14532d] text-white text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center">
                   <RefreshCwIcon className={`mr-2 w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} /> Refresh Status
                 </button>
                 {currentEntry.status === "getready" && (
                   <button onClick={handleMarkServed} disabled={isMarkingServed}
-                    className="h-12 sm:h-14 bg-green-600 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 text-white text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center">
+                    className="h-12 bg-green-600 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 text-white text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center">
                     {isMarkingServed ? (
                       <RefreshCwIcon className="mr-2 w-5 h-5 animate-spin" />
                     ) : (
