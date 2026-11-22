@@ -91,6 +91,38 @@ function getStockStatus(stock: number, available: boolean) {
   };
 }
 
+function getLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDaysUntilExpiration(expirationDate: string, today: string): number | null {
+  const toDayNumber = (date: string): number | null => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const [year, month, day] = date.split("-").map(Number);
+    const timestamp = Date.UTC(year, month - 1, day);
+    return new Date(timestamp).toISOString().slice(0, 10) === date
+      ? timestamp / 86_400_000
+      : null;
+  };
+  const expiryDay = toDayNumber(expirationDate);
+  const todayDay = toDayNumber(today);
+  return expiryDay === null || todayDay === null
+    ? null
+    : expiryDay - todayDay;
+}
+
+function getExpirationLabel(daysUntilExpiration: number): string {
+  if (daysUntilExpiration < 0) {
+    const days = Math.abs(daysUntilExpiration);
+    return `Expired ${days} day${days === 1 ? "" : "s"} ago`;
+  }
+  if (daysUntilExpiration === 0) return "Expires today";
+  return `Expires in ${daysUntilExpiration} day${daysUntilExpiration === 1 ? "" : "s"}`;
+}
+
 const STATUS_CONFIG = {
   waiting:    { label: "Waiting",    badge: "bg-amber-100 text-amber-800 border-amber-200",   dot: "bg-amber-400"   },
   processing: { label: "Processing", badge: "bg-blue-100 text-blue-800 border-blue-200",      dot: "bg-blue-500"    },
@@ -217,6 +249,8 @@ export default function AdminApp() {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState<AdminPage>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expiryNotificationsOpen, setExpiryNotificationsOpen] = useState(false);
+  const [expiryToday, setExpiryToday] = useState<string | null>(null);
 
   // Data
   const [medicines, setMedicines] = useState<StockItem[]>([]);
@@ -252,6 +286,7 @@ export default function AdminApp() {
   const [medLoading, setMedLoading] = useState(false);
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
   const alertedLowStockIds = useRef(new Set<string>());
+  const alertedExpiryKeys = useRef(new Set<string>());
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("daily");
   const [reportCategory, setReportCategory] = useState("all");
   const [reportMedicine, setReportMedicine] = useState("all");
@@ -259,6 +294,13 @@ export default function AdminApp() {
   const [reportEndDate, setReportEndDate] = useState("");
   const [reportHistoryEntries, setReportHistoryEntries] = useState<QueueEntry[]>([]);
   const [reportHistoryLoading, setReportHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    const updateToday = () => setExpiryToday(getLocalDateKey(new Date()));
+    updateToday();
+    const intervalId = window.setInterval(updateToday, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -400,10 +442,42 @@ export default function AdminApp() {
     });
   }, [medicines, showToast]);
 
+  useEffect(() => {
+    if (!expiryToday) return;
+
+    const newAlerts = medicines.flatMap((medicine) => {
+      if (!medicine.expirationDate || medicine.stock <= 0) return [];
+      const daysUntilExpiration = getDaysUntilExpiration(
+        medicine.expirationDate,
+        expiryToday
+      );
+      if (daysUntilExpiration === null || daysUntilExpiration > 5) return [];
+
+      const alertKey = `${medicine.id}:${medicine.expirationDate}`;
+      if (alertedExpiryKeys.current.has(alertKey)) return [];
+      alertedExpiryKeys.current.add(alertKey);
+      return [{ medicine, daysUntilExpiration }];
+    });
+
+    if (newAlerts.length === 1) {
+      const { medicine, daysUntilExpiration } = newAlerts[0];
+      showToast(
+        `${medicine.name}: ${getExpirationLabel(daysUntilExpiration)}`,
+        "warning"
+      );
+    } else if (newAlerts.length > 1) {
+      showToast(
+        `${newAlerts.length} medicines are expiring within 5 days. Check the notification bell.`,
+        "warning"
+      );
+    }
+  }, [expiryToday, medicines, showToast]);
+
   // ─── Navigation ──────────────────────────────────────────────────────────
   function navigate(page: AdminPage) {
     setCurrentPage(page);
     setSidebarOpen(false);
+    setExpiryNotificationsOpen(false);
   }
 
   // ─── Queue actions ────────────────────────────────────────────────────────
@@ -613,6 +687,20 @@ export default function AdminApp() {
   };
 
   const lowStockMeds = medicines.filter((m) => m.stock > 0 && m.stock <= 50);
+  const expiringMedicines = expiryToday
+    ? medicines
+        .flatMap((medicine) => {
+          if (!medicine.expirationDate || medicine.stock <= 0) return [];
+          const daysUntilExpiration = getDaysUntilExpiration(
+            medicine.expirationDate,
+            expiryToday
+          );
+          return daysUntilExpiration !== null && daysUntilExpiration <= 5
+            ? [{ medicine, daysUntilExpiration }]
+            : [];
+        })
+        .sort((a, b) => a.daysUntilExpiration - b.daysUntilExpiration)
+    : [];
   const medicineTypes = MEDICINE_CATEGORIES;
   const filteredMedicines = medicineTypeFilter === "all"
     ? medicines
@@ -707,18 +795,91 @@ export default function AdminApp() {
     { key: "medicines", label: "Medicine Inventory",icon: <BoxIcon className="w-5 h-5" />  },
   ];
 
+  const renderExpiryBell = () => (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setExpiryNotificationsOpen((open) => !open)}
+        aria-label={`Expiration notifications${expiringMedicines.length ? `, ${expiringMedicines.length} medicines` : ""}`}
+        aria-expanded={expiryNotificationsOpen}
+        className="relative flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
+      >
+        <BellIcon className="h-5 w-5" />
+        {expiringMedicines.length > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+            {expiringMedicines.length > 99 ? "99+" : expiringMedicines.length}
+          </span>
+        )}
+      </button>
+
+      {expiryNotificationsOpen && (
+        <div className="absolute right-0 top-full z-[60] mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+          <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3">
+            <div>
+              <p className="font-bold text-gray-900">Expiration alerts</p>
+              <p className="text-xs text-gray-500">Medicines expiring within 5 days</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpiryNotificationsOpen(false)}
+              aria-label="Close expiration alerts"
+              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
+          {expiringMedicines.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm text-gray-500">
+              No medicines expiring within 5 days.
+            </p>
+          ) : (
+            <div className="max-h-[60vh] divide-y divide-gray-100 overflow-y-auto">
+              {expiringMedicines.map(({ medicine, daysUntilExpiration }) => (
+                <button
+                  key={`${medicine.id}:${medicine.expirationDate}`}
+                  type="button"
+                  onClick={() => {
+                    setMedicineTypeFilter("all");
+                    setExpiryNotificationsOpen(false);
+                    navigate("medicines");
+                  }}
+                  className="block w-full px-4 py-3 text-left hover:bg-amber-50"
+                >
+                  <span className="block break-words font-semibold text-gray-900">
+                    {medicine.name}
+                  </span>
+                  <span className="mt-1 flex items-center justify-between gap-3 text-xs">
+                    <span className="text-gray-500">
+                      Stock: {medicine.stock} · Expires {medicine.expirationDate}
+                    </span>
+                    <span className="shrink-0 font-semibold text-amber-700">
+                      {getExpirationLabel(daysUntilExpiration)}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   // ─── Sidebar Component ────────────────────────────────────────────────────
   const Sidebar = (
     <div className="flex flex-col h-full">
       <div className="px-6 py-6 border-b border-gray-100">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-emerald-700 rounded-xl flex items-center justify-center">
-            <PillIcon className="w-6 h-6 text-white" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="w-10 h-10 shrink-0 bg-emerald-700 rounded-xl flex items-center justify-center">
+              <PillIcon className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-extrabold text-emerald-700 leading-tight">MediServe</h1>
+              <p className="text-xs text-gray-400">Admin Panel</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-extrabold text-emerald-700 leading-tight">MediServe</h1>
-            <p className="text-xs text-gray-400">Admin Panel</p>
-          </div>
+          {renderExpiryBell()}
         </div>
       </div>
 
@@ -766,7 +927,11 @@ export default function AdminApp() {
         {toasts.map((t) => (
           <div key={t.id}
             className={`toast-anim-in break-words px-4 py-3 rounded-xl shadow-lg border text-sm font-semibold pointer-events-auto ${
-              t.type === "error" ? "bg-red-50 border-red-200 text-red-800" : "bg-emerald-50 border-emerald-200 text-emerald-800"
+              t.type === "error"
+                ? "bg-red-50 border-red-200 text-red-800"
+                : t.type === "warning"
+                  ? "bg-amber-50 border-amber-200 text-amber-900"
+                  : "bg-emerald-50 border-emerald-200 text-emerald-800"
             }`}>{t.msg}</div>
         ))}
       </div>
@@ -804,7 +969,8 @@ export default function AdminApp() {
               </div>
               <span className="truncate font-bold text-emerald-700 text-base sm:text-lg">MediServe Admin</span>
             </div>
-            <div className="ml-auto shrink-0">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {renderExpiryBell()}
               <button onClick={handleLogout} aria-label="Sign out" className="text-red-500 hover:text-red-700 p-2 rounded-xl hover:bg-red-50">
                 <LogOutIcon className="w-5 h-5" />
               </button>
@@ -1136,7 +1302,9 @@ export default function AdminApp() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Medicine Inventory</h1>
-                  <p className="text-gray-500">{medicines.length} total · {medicines.filter(isStockItemAvailable).length} available · {lowStockMeds.length} low stock</p>
+                  <p className="text-gray-500">
+                    {medicines.length} total · {medicines.filter(isStockItemAvailable).length} available · {lowStockMeds.length} low stock · {expiringMedicines.length} expiring within 5 days
+                  </p>
                 </div>
               </div>
 
@@ -1202,19 +1370,22 @@ export default function AdminApp() {
                 <table className="min-w-[1000px] w-full">
                   <thead>
                     <tr className="bg-emerald-50 border-b border-emerald-100">
-                      {["Medicine Name","Category","Quantity","Status","Availability","Actions"].map((h) => (
+                      {["Medicine Name","Category","Quantity","Status","Expiration","Availability","Actions"].map((h) => (
                         <th key={h} className={`px-6 py-4 text-sm font-bold text-gray-600 uppercase ${h === "Actions" ? "text-right" : "text-left"}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-50">
                     {filteredMedicines.length === 0 ? (
-                      <tr><td colSpan={6} className="text-center py-16 text-gray-400">{medicines.length === 0 ? "No medicines. Add one to get started." : "No medicines match this type."}</td></tr>
+                      <tr><td colSpan={7} className="text-center py-16 text-gray-400">{medicines.length === 0 ? "No medicines. Add one to get started." : "No medicines match this type."}</td></tr>
                     ) : filteredMedicines.map((med) => {
                       const medicineAvailable = isStockItemAvailable(med);
                       const stockStatus = getStockStatus(med.stock, medicineAvailable);
                       const stockColor = stockStatus.color;
                       const stockLabel = stockStatus.label;
+                      const daysUntilExpiration = med.expirationDate && expiryToday
+                        ? getDaysUntilExpiration(med.expirationDate, expiryToday)
+                        : null;
                       return (
                         <tr key={med.id} className="hover:bg-emerald-50/40">
                           <td className="px-6 py-4">
@@ -1237,6 +1408,22 @@ export default function AdminApp() {
                             <span className={`inline-flex px-3 py-1.5 rounded-full text-sm font-bold border ${stockColor}`}>
                               {stockLabel}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm">
+                            {med.expirationDate ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="text-gray-700">{med.expirationDate}</span>
+                                {med.stock > 0 && daysUntilExpiration !== null && daysUntilExpiration <= 5 && (
+                                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    daysUntilExpiration < 0
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-amber-100 text-amber-800"
+                                  }`}>
+                                    {getExpirationLabel(daysUntilExpiration)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : "—"}
                           </td>
                           <td className="px-6 py-4">
                             <button onClick={() => handleToggleAvailable(med)}
@@ -1274,6 +1461,9 @@ export default function AdminApp() {
                   const stockStatus = getStockStatus(med.stock, medicineAvailable);
                   const stockColor = stockStatus.color;
                   const stockLabel = stockStatus.label;
+                  const daysUntilExpiration = med.expirationDate && expiryToday
+                    ? getDaysUntilExpiration(med.expirationDate, expiryToday)
+                    : null;
                   return (
                     <div key={med.id} className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
                       <div className="flex items-start gap-4 mb-4">
@@ -1291,6 +1481,20 @@ export default function AdminApp() {
                           <span className={`text-xs font-bold ${stockColor.split(" ")[0]}`}>{stockLabel}</span>
                         </div>
                       </div>
+                      {med.expirationDate && (
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm">
+                          <span className="text-gray-600">Expires {med.expirationDate}</span>
+                          {med.stock > 0 && daysUntilExpiration !== null && daysUntilExpiration <= 5 && (
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              daysUntilExpiration < 0
+                                ? "bg-red-100 text-red-700"
+                                : "bg-amber-100 text-amber-800"
+                            }`}>
+                              {getExpirationLabel(daysUntilExpiration)}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div className="flex flex-col min-[420px]:flex-row gap-2">
                         <button onClick={() => handleToggleAvailable(med)}
                           className={`min-h-11 min-w-0 flex-1 break-words rounded-xl px-3 py-2 text-sm font-semibold border-2 transition-colors min-[420px]:h-10 min-[420px]:py-0 ${
