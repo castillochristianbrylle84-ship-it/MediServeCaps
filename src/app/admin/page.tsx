@@ -8,8 +8,9 @@ const clean = (value: string) =>
 export default async function AdminPage() {
   const host = clean((await headers()).get("host") || "");
   const adminHost = clean(process.env.ADMIN_HOST || "");
+  const isLocalhost = host === "localhost" || host.startsWith("localhost:");
 
-  if (adminHost && host !== adminHost) {
+  if (adminHost ? host !== adminHost : !isLocalhost) {
     redirect("/customer");
   }
 

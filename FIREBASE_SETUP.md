@@ -130,6 +130,11 @@ For `FIREBASE_ADMIN_PRIVATE_KEY`, preserve the PEM key and encode line breaks as
 
 ### Admin access
 
+The Next.js `/admin` route is available only on the hostname configured in
+`ADMIN_HOST`; set it to the admin site's hostname, not the customer site's.
+When `ADMIN_HOST` is unset, hosted requests to `/admin` redirect to `/customer`
+and the route remains available on localhost for development.
+
 The `/admin` page verifies signed-in users with `/api/admin/session` before
 showing the dashboard. Admin API handlers verify the Firebase ID token,
 including revocation status, then fetch the current Firebase Authentication
