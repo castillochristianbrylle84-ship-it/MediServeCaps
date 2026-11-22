@@ -774,7 +774,7 @@ export default function AdminApp() {
       <div className="flex min-h-screen">
 
         {/* ── Desktop Sidebar ── */}
-        <aside className="hidden lg:flex flex-col w-72 border-r border-gray-200 bg-white sticky top-0 h-screen">
+        <aside className="hidden lg:flex w-72 shrink-0 flex-col border-r border-gray-200 bg-white sticky top-0 h-screen">
           {Sidebar}
         </aside>
 
@@ -792,19 +792,20 @@ export default function AdminApp() {
         <main className="flex-1 min-w-0">
 
           {/* Mobile Top Bar */}
-          <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-30">
+          <div className="lg:hidden bg-white border-b border-gray-200 px-3 sm:px-4 py-3 flex items-center gap-2 sm:gap-3 sticky top-0 z-30">
             <button onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-xl hover:bg-gray-100 text-gray-600">
+              aria-label="Open admin navigation"
+              className="shrink-0 p-2 rounded-xl hover:bg-gray-100 text-gray-600">
               <MenuIcon className="w-6 h-6" />
             </button>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-emerald-700 rounded-lg flex items-center justify-center">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="w-7 h-7 shrink-0 bg-emerald-700 rounded-lg flex items-center justify-center">
                 <PillIcon className="w-4 h-4 text-white" />
               </div>
-              <span className="whitespace-nowrap font-bold text-emerald-700 text-base sm:text-lg">MediServe Admin</span>
+              <span className="truncate font-bold text-emerald-700 text-base sm:text-lg">MediServe Admin</span>
             </div>
-            <div className="ml-auto">
-              <button onClick={handleLogout} className="text-red-500 hover:text-red-700 p-2 rounded-xl hover:bg-red-50">
+            <div className="ml-auto shrink-0">
+              <button onClick={handleLogout} aria-label="Sign out" className="text-red-500 hover:text-red-700 p-2 rounded-xl hover:bg-red-50">
                 <LogOutIcon className="w-5 h-5" />
               </button>
             </div>
@@ -912,8 +913,8 @@ export default function AdminApp() {
                     </div>
                   </div>
 
-                  <div className="overflow-hidden rounded-2xl border border-emerald-100">
-                    <table className="w-full">
+                  <div className="overflow-x-auto rounded-2xl border border-emerald-100">
+                    <table className="min-w-[320px] w-full">
                       <thead>
                         <tr className="bg-emerald-50 border-b border-emerald-100">
                           <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Medicine</th>
@@ -925,7 +926,7 @@ export default function AdminApp() {
                           <tr><td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">{reportHistoryLoading ? "Loading dispensing records..." : "No dispensing records match the filters"}</td></tr>
                         ) : reportProductTotals.map((item) => (
                           <tr key={item.name} className="hover:bg-emerald-50/40">
-                            <td className="px-4 py-3 text-sm font-semibold text-gray-800">{item.name}</td>
+                            <td className="break-words px-4 py-3 text-sm font-semibold text-gray-800">{item.name}</td>
                             <td className="px-4 py-3 text-right text-sm font-bold text-emerald-700">{item.quantity}</td>
                           </tr>
                         ))}
@@ -951,7 +952,7 @@ export default function AdminApp() {
                           .slice(0, 5).map((entry) => {
                           const sc = STATUS_CONFIG[entry.status];
                           return (
-                            <div key={entry.id} className="px-6 py-4 hover:bg-emerald-50/60 transition-colors flex items-center justify-between">
+                            <div key={entry.id} className="px-4 sm:px-6 py-4 hover:bg-emerald-50/60 transition-colors flex items-center justify-between gap-3">
                               <div className="flex min-w-0 items-center gap-4">
                                 <div className={`w-3 h-3 rounded-full ${sc.dot}`} />
                                 <div className="min-w-0">
@@ -959,7 +960,7 @@ export default function AdminApp() {
                                   <p className="break-words text-gray-600 text-sm">{entry.patientName}</p>
                                 </div>
                               </div>
-                              <div className="text-right">
+                              <div className="shrink-0 text-right">
                                 <p className="text-xs text-gray-400">{new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
                                 <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full mt-1 border ${sc.badge}`}>{sc.label}</span>
                               </div>
@@ -972,9 +973,9 @@ export default function AdminApp() {
               </div>
 
               {/* System status */}
-              <div className="mt-6 p-6 bg-emerald-50 border border-emerald-100 rounded-3xl flex items-center gap-4">
+              <div className="mt-6 p-4 sm:p-6 bg-emerald-50 border border-emerald-100 rounded-3xl flex items-start sm:items-center gap-4">
                 <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
-                <div>
+                <div className="min-w-0">
                   <p className="font-bold text-emerald-700">System Status — All systems operational</p>
                   <p className="text-xs text-gray-400">Real-time Firestore sync active · {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
                 </div>
@@ -1022,8 +1023,8 @@ export default function AdminApp() {
               ) : (
                 <>
                   {/* Desktop Table */}
-                  <div className="hidden xl:block bg-white border border-emerald-100 rounded-2xl overflow-x-auto shadow-sm">
-                    <table className="w-full">
+                  <div className="hidden 2xl:block bg-white border border-emerald-100 rounded-2xl overflow-x-auto shadow-sm">
+                    <table className="min-w-[900px] w-full">
                       <thead>
                         <tr className="bg-emerald-50 border-b border-emerald-100">
                           { ["Queue #","Patient","Type","Medicines","Status","Time"].map((h) => (
@@ -1087,7 +1088,7 @@ export default function AdminApp() {
                   </div>
 
                   {/* Mobile Cards */}
-                  <div className="xl:hidden space-y-3">
+                  <div className="2xl:hidden space-y-3">
                     {filteredEntries.map((entry) => {
                       const sc = STATUS_CONFIG[entry.status];
                       const isPWD = entry.patientType === "pwd";
@@ -1095,7 +1096,7 @@ export default function AdminApp() {
                         <div key={entry.id}
                           role={entry.status === "served" ? undefined : "button"}
                           tabIndex={entry.status === "served" ? undefined : 0}
-                          className={`bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm ${entry.status === "served" ? "cursor-default" : "cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"}`}
+                          className={`bg-white border border-emerald-100 rounded-2xl p-4 sm:p-5 shadow-sm ${entry.status === "served" ? "cursor-default" : "cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"}`}
                           onClick={() => openQueueEntry(entry)}
                           onKeyDown={(event) => {
                             if (entry.status === "served") return;
@@ -1197,8 +1198,8 @@ export default function AdminApp() {
               )}
 
               {/* Desktop Table */}
-              <div className="hidden xl:block bg-white border border-emerald-100 rounded-2xl overflow-x-auto shadow-sm">
-                <table className="w-full">
+              <div className="hidden 2xl:block bg-white border border-emerald-100 rounded-2xl overflow-x-auto shadow-sm">
+                <table className="min-w-[1000px] w-full">
                   <thead>
                     <tr className="bg-emerald-50 border-b border-emerald-100">
                       {["Medicine Name","Category","Quantity","Status","Availability","Actions"].map((h) => (
@@ -1262,7 +1263,7 @@ export default function AdminApp() {
               </div>
 
               {/* Mobile Cards */}
-              <div className="xl:hidden space-y-3">
+              <div className="2xl:hidden space-y-3">
                 {filteredMedicines.length === 0 ? (
                   <div className="bg-white border border-emerald-100 rounded-2xl p-12 text-center">
                     <BoxIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -1290,15 +1291,15 @@ export default function AdminApp() {
                           <span className={`text-xs font-bold ${stockColor.split(" ")[0]}`}>{stockLabel}</span>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-col min-[420px]:flex-row gap-2">
                         <button onClick={() => handleToggleAvailable(med)}
-                          className={`flex-1 h-10 rounded-xl text-sm font-semibold border-2 transition-colors ${
+                          className={`min-h-11 min-w-0 flex-1 break-words rounded-xl px-3 py-2 text-sm font-semibold border-2 transition-colors min-[420px]:h-10 min-[420px]:py-0 ${
                             medicineAvailable ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-gray-300 text-gray-500"
                           }`}>
                           {medicineAvailable ? "Mark as Unavailable" : "Mark as Available"}
                         </button>
                         <button onClick={() => openEditMed(med)}
-                          className="flex-1 h-10 border-2 border-emerald-700 text-emerald-700 hover:bg-emerald-50 font-semibold rounded-xl flex items-center justify-center">
+                          className="min-h-11 min-w-0 flex-1 border-2 border-emerald-700 text-emerald-700 hover:bg-emerald-50 font-semibold rounded-xl flex items-center justify-center min-[420px]:h-10">
                           <EditIcon className="w-4 h-4 mr-1" /> Edit
                         </button>
                       </div>
@@ -1420,8 +1421,8 @@ export default function AdminApp() {
 
       {/* ════════════ MEDICINE MODAL ════════════ */}
       {medModalOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50 p-4" onClick={() => setMedModalOpen(false)}>
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-xl modal-show" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50 p-2 sm:p-4" onClick={() => setMedModalOpen(false)}>
+          <div className="w-full max-w-3xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] overflow-y-auto overscroll-contain bg-white rounded-2xl shadow-xl modal-show" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 sm:px-6 py-5 border-b border-emerald-50 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{editingMed ? "Edit Medicine" : "Add New Medicine"}</h2>
@@ -1537,7 +1538,7 @@ export default function AdminApp() {
                 </div>
               </section>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex flex-col-reverse min-[420px]:flex-row gap-3 pt-2">
                 <button type="button" onClick={() => setMedModalOpen(false)}
                   className="flex-1 h-12 border-2 border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-semibold">
                   Cancel
