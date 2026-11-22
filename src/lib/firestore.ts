@@ -484,11 +484,41 @@ export async function updateQueueEntryStatus(
   status: QueueEntry["status"]
 ): Promise<void> {
   const customerRef = doc(db, "customers", id);
+  const activeQueueRefs =
+    status === "getready"
+      ? (await getQueueEntries())
+          .filter(
+            (entry) =>
+              entry.id !== id &&
+              !entry.wasServed &&
+              entry.status !== "served" &&
+              entry.status !== "archived"
+          )
+          .map((entry) => doc(db, "customers", entry.id))
+      : [];
 
   if (status !== "served") {
     await runTransaction(db, async (transaction) => {
-      const customerSnap = await transaction.get(customerRef);
+      const [customerSnap, ...activeQueueSnapshots] = await Promise.all([
+        transaction.get(customerRef),
+        ...activeQueueRefs.map((entryRef) => transaction.get(entryRef)),
+      ]);
       if (!customerSnap.exists()) throw new Error("Queue entry not found.");
+
+      if (status === "getready") {
+        const alreadyReady = activeQueueSnapshots.find(
+          (entrySnap) =>
+            entrySnap.exists() &&
+            entrySnap.get("status") === "getready" &&
+            entrySnap.get("wasServed") !== true
+        );
+        if (alreadyReady) {
+          const queueNumber = alreadyReady.get("queueNumber") ?? "unknown";
+          throw new Error(
+            `Queue #${queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`
+          );
+        }
+      }
 
       const customerData = customerSnap.data();
       const patientType = customerData.patientType === "pwd" ? "pwd_patients" : "regular_patients";

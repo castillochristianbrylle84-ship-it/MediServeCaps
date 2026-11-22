@@ -221,6 +221,8 @@ export default function AdminApp() {
   // Data
   const [medicines, setMedicines] = useState<StockItem[]>([]);
   const [entries, setEntries]     = useState<QueueEntry[]>([]);
+  const getReadyEntry =
+    entries.find((entry) => entry.status === "getready" && !entry.wasServed) ?? null;
 
   // Queue state
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
@@ -407,12 +409,23 @@ export default function AdminApp() {
   // ─── Queue actions ────────────────────────────────────────────────────────
   async function handleUpdateStatus(id: string, status: QueueEntry["status"]) {
     if (updatingQueueIds.has(id)) return;
+    if (status === "getready" && getReadyEntry && getReadyEntry.id !== id) {
+      showToast(
+        `Queue #${getReadyEntry.queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`,
+        "error"
+      );
+      return;
+    }
+
     const entry = entries.find((candidate) => candidate.id === id);
     setUpdatingQueueIds((current) => new Set(current).add(id));
     try {
       await updateQueueEntryStatus(id, status);
-    } catch {
-      showToast("Failed to update status", "error");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Failed to update status",
+        "error"
+      );
       return;
     } finally {
       setUpdatingQueueIds((current) => {
@@ -978,6 +991,11 @@ export default function AdminApp() {
                   <p className="text-gray-500">{counts.waiting} waiting · {counts.served} served today</p>
                 </div>
               </div>
+              {getReadyEntry && (
+                <div role="status" className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+                  Queue #{getReadyEntry.queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.
+                </div>
+              )}
 
               {/* Filter Tabs */}
               <div className="flex flex-wrap gap-2 mb-6">
@@ -1310,6 +1328,10 @@ export default function AdminApp() {
             <div className="min-h-0 p-4 sm:p-6 space-y-5 overflow-y-auto">
               {(() => {
                 const entry = selectedEntry;
+                const getReadyLockMessage =
+                  getReadyEntry && getReadyEntry.id !== entry.id
+                    ? `Queue #${getReadyEntry.queueNumber} is currently in "Get Ready". Mark them as Served first.`
+                    : undefined;
                 const sc = STATUS_CONFIG[entry.status];
                 const isPWD = entry.patientType === "pwd";
                 return (
@@ -1360,9 +1382,11 @@ export default function AdminApp() {
                     <div className="space-y-2.5 pt-1">
                       {entry.status !== "getready" && (
                         <button onClick={() => { handleUpdateStatus(entry.id, "getready"); setModalOpen(false); }}
-                          className="w-full h-12 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl flex items-center justify-center gap-2">
+                          disabled={!!getReadyLockMessage || updatingQueueIds.has(entry.id)}
+                          title={getReadyLockMessage}
+                          className="w-full h-12 bg-orange-500 hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50 text-white font-semibold rounded-xl flex items-center justify-center gap-2">
                           <BellIcon className="w-5 h-5" />
-                          Mark Get Ready {entry.phone ? "& Send SMS" : ""}
+                          {updatingQueueIds.has(entry.id) ? "Updating..." : `Mark Get Ready ${entry.phone ? "& Send SMS" : ""}`}
                         </button>
                       )}
                       <div className={`grid gap-2.5 ${entry.status === "processing" || entry.status === "getready" ? "grid-cols-1" : "grid-cols-1 min-[420px]:grid-cols-2"}`}>
