@@ -13,6 +13,8 @@ import {
   subscribeQueueEntries,
   addStockItem,
   updateStockItem,
+  setStockItemAvailability,
+  isStockItemAvailable,
   updateQueueEntryStatus,
   deleteQueueEntry,
   getQueueEntriesForDateRange,
@@ -64,11 +66,17 @@ const MEDICINE_CATEGORIES = [
   "Central nervous system & psychiatric drugs",
 ] as const;
 
-function getStockStatus(stock: number) {
+function getStockStatus(stock: number, available: boolean) {
   if (stock <= 0) {
     return {
-      label: "No Stock",
+      label: "Out of Stock",
       color: "text-red-700 bg-red-50 border-red-200",
+    };
+  }
+  if (!available) {
+    return {
+      label: "Unavailable",
+      color: "text-gray-700 bg-gray-50 border-gray-200",
     };
   }
   if (stock < 50) {
@@ -218,6 +226,7 @@ export default function AdminApp() {
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [selectedEntry, setSelectedEntry] = useState<QueueEntry | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [updatingQueueIds, setUpdatingQueueIds] = useState<Set<string>>(new Set());
 
   // Medicine modal state
   const [medModalOpen, setMedModalOpen] = useState(false);
@@ -397,12 +406,20 @@ export default function AdminApp() {
 
   // ─── Queue actions ────────────────────────────────────────────────────────
   async function handleUpdateStatus(id: string, status: QueueEntry["status"]) {
+    if (updatingQueueIds.has(id)) return;
     const entry = entries.find((candidate) => candidate.id === id);
+    setUpdatingQueueIds((current) => new Set(current).add(id));
     try {
       await updateQueueEntryStatus(id, status);
     } catch {
       showToast("Failed to update status", "error");
       return;
+    } finally {
+      setUpdatingQueueIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
     }
 
     if (status !== "getready" || !entry || entry.status === "getready") {
@@ -518,7 +535,11 @@ export default function AdminApp() {
     }
     setMedLoading(true);
     try {
-      const medicineData = { ...medForm, available: medForm.stock > 0 };
+      const medicineData = {
+        ...medForm,
+        manualUnavailable: editingMed?.manualUnavailable ?? false,
+        available: medForm.stock > 0,
+      };
       if (editingMed) {
         await updateStockItem(editingMed.id, medicineData);
         showToast("Medicine updated successfully");
@@ -527,23 +548,26 @@ export default function AdminApp() {
         showToast("Medicine added successfully");
       }
       setMedModalOpen(false);
-    } catch {
-      showToast("Failed to save medicine", "error");
+    } catch (error) {
+      console.error("Could not save medicine:", error);
+      showToast(error instanceof Error ? error.message : "Failed to save medicine", "error");
     } finally {
       setMedLoading(false);
     }
   }
 
   async function handleToggleAvailable(med: StockItem) {
-    if (med.stock <= 0) {
+    const currentlyAvailable = isStockItemAvailable(med);
+    if (!currentlyAvailable && med.stock <= 0) {
       showToast("Restock this medicine before marking it available", "error");
       return;
     }
     try {
-      await updateStockItem(med.id, { available: !med.available });
-      showToast(!med.available ? "Medicine marked available" : "Medicine marked unavailable");
-    } catch {
-      showToast("Failed to update availability", "error");
+      await setStockItemAvailability(med.id, !currentlyAvailable);
+      showToast(currentlyAvailable ? "Medicine marked unavailable" : "Medicine marked available");
+    } catch (error) {
+      console.error("Could not update medicine availability:", error);
+      showToast(error instanceof Error ? error.message : "Failed to update availability", "error");
     }
   }
 
@@ -786,7 +810,7 @@ export default function AdminApp() {
                 {[
                   { title: "Waiting Patients", value: counts.waiting, sub: `${entries.filter((e) => e.status === "waiting" && e.patientType === "pwd").length} PWD priority`, icon: <UsersIcon className="w-6 h-6" /> },
                   { title: "Served Today",      value: counts.served,  sub: "Completed today", icon: <ActivityIcon className="w-6 h-6" /> },
-                  { title: "Available Medicines",value: medicines.filter((m) => m.available).length, sub: `${medicines.length} total in inventory`, icon: <BoxIcon className="w-6 h-6" /> },
+                  { title: "Available Medicines",value: medicines.filter(isStockItemAvailable).length, sub: `${medicines.length} total in inventory`, icon: <BoxIcon className="w-6 h-6" /> },
                   { title: "Low Stock Items",   value: lowStockMeds.length, sub: "Needs restocking", icon: <AlertTriangleIcon className="w-6 h-6" /> },
                 ].map((stat, i) => (
                   <div key={i} className="bg-white rounded-2xl p-4 border border-emerald-100 shadow-sm hover:shadow-md transition-shadow">
@@ -1093,7 +1117,7 @@ export default function AdminApp() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Medicine Inventory</h1>
-                  <p className="text-gray-500">{medicines.length} total · {medicines.filter((m) => m.available).length} available · {lowStockMeds.length} low stock</p>
+                  <p className="text-gray-500">{medicines.length} total · {medicines.filter(isStockItemAvailable).length} available · {lowStockMeds.length} low stock</p>
                 </div>
               </div>
 
@@ -1168,7 +1192,8 @@ export default function AdminApp() {
                     {filteredMedicines.length === 0 ? (
                       <tr><td colSpan={6} className="text-center py-16 text-gray-400">{medicines.length === 0 ? "No medicines. Add one to get started." : "No medicines match this type."}</td></tr>
                     ) : filteredMedicines.map((med) => {
-                      const stockStatus = getStockStatus(med.stock);
+                      const medicineAvailable = isStockItemAvailable(med);
+                      const stockStatus = getStockStatus(med.stock, medicineAvailable);
                       const stockColor = stockStatus.color;
                       const stockLabel = stockStatus.label;
                       return (
@@ -1197,10 +1222,10 @@ export default function AdminApp() {
                           <td className="px-6 py-4">
                             <button onClick={() => handleToggleAvailable(med)}
                               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-semibold text-sm transition-colors ${
-                                med.available ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                                medicineAvailable ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100" : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
                               }`}>
-                              <div className={`w-2 h-2 rounded-full ${med.available ? "bg-emerald-500" : "bg-gray-400"}`} />
-                              {med.available ? "Available" : "Unavailable"}
+                              <div className={`w-2 h-2 rounded-full ${medicineAvailable ? "bg-emerald-500" : "bg-gray-400"}`} />
+                              {medicineAvailable ? "Mark as Unavailable" : "Mark as Available"}
                             </button>
                           </td>
                           <td className="px-6 py-4">
@@ -1226,7 +1251,8 @@ export default function AdminApp() {
                     <p className="text-gray-500">{medicines.length === 0 ? "No medicines yet." : "No medicines match this type."}</p>
                   </div>
                 ) : filteredMedicines.map((med) => {
-                  const stockStatus = getStockStatus(med.stock);
+                  const medicineAvailable = isStockItemAvailable(med);
+                  const stockStatus = getStockStatus(med.stock, medicineAvailable);
                   const stockColor = stockStatus.color;
                   const stockLabel = stockStatus.label;
                   return (
@@ -1249,9 +1275,9 @@ export default function AdminApp() {
                       <div className="flex gap-2">
                         <button onClick={() => handleToggleAvailable(med)}
                           className={`flex-1 h-10 rounded-xl text-sm font-semibold border-2 transition-colors ${
-                            med.available ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-gray-300 text-gray-500"
+                            medicineAvailable ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-gray-300 text-gray-500"
                           }`}>
-                          {med.available ? "✓ Available" : "Unavailable"}
+                          {medicineAvailable ? "Mark as Unavailable" : "Mark as Available"}
                         </button>
                         <button onClick={() => openEditMed(med)}
                           className="flex-1 h-10 border-2 border-emerald-700 text-emerald-700 hover:bg-emerald-50 font-semibold rounded-xl flex items-center justify-center">
@@ -1348,8 +1374,9 @@ export default function AdminApp() {
                         )}
                         {entry.status !== "served" && (
                           <button onClick={() => { handleUpdateStatus(entry.id, "served"); setModalOpen(false); }}
-                            className="h-11 bg-emerald-700 text-white font-semibold rounded-xl hover:bg-emerald-800">
-                            Mark Served
+                            disabled={updatingQueueIds.has(entry.id)}
+                            className="h-11 bg-emerald-700 text-white font-semibold rounded-xl hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                            {updatingQueueIds.has(entry.id) ? "Updating..." : "Mark Served"}
                           </button>
                         )}
                       </div>

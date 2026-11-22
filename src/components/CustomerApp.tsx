@@ -6,6 +6,9 @@ import {
   subscribeQueueEntries,
   addQueueEntry,
   getNextQueueNumber,
+  getStockItems,
+  isStockItemAvailable,
+  updateQueueEntryStatus,
   type StockItem,
   type QueueEntry,
 } from "@/lib/firestore";
@@ -128,6 +131,7 @@ export default function CustomerApp() {
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [historyEntryIds, setHistoryEntryIds] = useState<string[]>(loadSavedQueueHistory);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isMarkingServed, setIsMarkingServed] = useState(false);
   const [availableSearchInput, setAvailableSearchInput] = useState("");
   const [availableSearch, setAvailableSearch] = useState("");
   const [neededSearchInput, setNeededSearchInput] = useState("");
@@ -151,11 +155,15 @@ export default function CustomerApp() {
   useEffect(() => {
     setForm((prev) => {
       let changed = false;
-      const selectedMedicines = prev.selectedMedicines.map((selected) => {
-        const stock = medicines.find((medicine) => medicine.name === selected.name)?.stock ?? 0;
-        const quantity = Math.max(1, Math.min(selected.quantity, stock));
+      const selectedMedicines = prev.selectedMedicines.flatMap((selected) => {
+        const medicine = medicines.find((item) => item.name === selected.name);
+        if (!medicine || !isStockItemAvailable(medicine)) {
+          changed = true;
+          return [];
+        }
+        const quantity = Math.min(selected.quantity, medicine.stock);
         if (quantity !== selected.quantity) changed = true;
-        return { ...selected, quantity };
+        return [{ ...selected, quantity }];
       });
       return changed ? { ...prev, selectedMedicines } : prev;
     });
@@ -195,6 +203,28 @@ export default function CustomerApp() {
 
   setIsSubmitting(true);
   try {
+    const latestStockItems = await getStockItems();
+    const unavailableMedicine = form.selectedMedicines.find((selected) => {
+      const medicine = latestStockItems.find((item) => item.name === selected.name);
+      return (
+        !medicine ||
+        !isStockItemAvailable(medicine) ||
+        selected.quantity > medicine.stock
+      );
+    });
+    if (unavailableMedicine) {
+      const latestMedicine = latestStockItems.find(
+        (item) => item.name === unavailableMedicine.name
+      );
+      showToast(
+        !latestMedicine || !isStockItemAvailable(latestMedicine)
+          ? `${unavailableMedicine.name} is no longer available. Please update your selection.`
+          : `Only ${latestMedicine.stock} ${unavailableMedicine.name} remaining. Please update your quantity.`,
+        "error"
+      );
+      return;
+    }
+
     const now = new Date().toISOString();
     const { queueDate, queueNumber } = await getNextQueueNumber(
       form.patientType
@@ -228,6 +258,8 @@ export default function CustomerApp() {
   const e = err as { code?: string; message?: string };
   console.error("Firebase error:", e?.code, e?.message);
   showToast(`Failed: ${e?.code ?? ""} ${e?.message ?? String(err)}`, "error");
+  } finally {
+    setIsSubmitting(false);
   }
 }
 
@@ -282,11 +314,17 @@ export default function CustomerApp() {
 
   // ─── Medicine selection helpers ────────────────────────────────────────────
   function toggleMedicine(name: string) {
+    const medicine = medicines.find((item) => item.name === name);
+    const exists = form.selectedMedicines.some((item) => item.name === name);
+    if (!exists && (!medicine || !isStockItemAvailable(medicine))) {
+      showToast(`${name} is unavailable`, "error");
+      return;
+    }
+
     setForm((prev) => {
-      const exists = prev.selectedMedicines.find((m) => m.name === name);
       return {
         ...prev,
-        selectedMedicines: exists
+        selectedMedicines: prev.selectedMedicines.some((m) => m.name === name)
           ? prev.selectedMedicines.filter((m) => m.name !== name)
           : [...prev.selectedMedicines, { name, quantity: 1 }],
       };
@@ -294,7 +332,12 @@ export default function CustomerApp() {
   }
 
   function updateQty(name: string, qty: number, showLimitWarning = false) {
-    const availableStock = medicines.find((medicine) => medicine.name === name)?.stock ?? 0;
+    const medicine = medicines.find((item) => item.name === name);
+    if (!medicine || !isStockItemAvailable(medicine)) {
+      showToast(`${name} is unavailable`, "error");
+      return;
+    }
+    const availableStock = medicine.stock;
     if (!Number.isFinite(qty)) return;
     if (qty > availableStock) {
       if (showLimitWarning) showToast(`Cannot exceed available stock: ${availableStock}`, "error");
@@ -315,6 +358,22 @@ export default function CustomerApp() {
     if (isRefreshing) return;
     setIsRefreshing(true);
     setTimeout(() => setIsRefreshing(false), 600);
+  }
+
+  async function handleMarkServed() {
+    if (!currentEntry || isMarkingServed) return;
+    if (currentEntry.status !== "getready") return;
+
+    setIsMarkingServed(true);
+    try {
+      await updateQueueEntryStatus(currentEntry.id, "served");
+      showToast("Status updated to Served");
+    } catch (error) {
+      console.error("Could not mark queue entry as served:", error);
+      showToast("Could not update the status. Please try again.", "error");
+    } finally {
+      setIsMarkingServed(false);
+    }
   }
 
   // ─── Save queue details as an image ────────────────────────────────────────
@@ -398,12 +457,12 @@ export default function CustomerApp() {
     }
   }
 
-  const availableMeds = medicines.filter((m) => m.available);
-  const searchedAvailableMeds = availableMeds.filter((med) => {
+  const customerMeds = medicines;
+  const searchedAvailableMeds = customerMeds.filter((med) => {
     const query = availableSearch.trim().toLowerCase();
     return !query || med.name.toLowerCase().includes(query) || med.type.toLowerCase().includes(query);
   });
-  const searchedNeededMeds = availableMeds.filter((med) => {
+  const searchedNeededMeds = customerMeds.filter((med) => {
     const query = neededSearch.trim().toLowerCase();
     return !query || med.name.toLowerCase().includes(query) || med.type.toLowerCase().includes(query);
   });
@@ -459,14 +518,14 @@ export default function CustomerApp() {
             </div>
 
             <div className="mb-6 sm:mb-8 slide-up" style={{ animationDelay: "0.3s" }}>
-              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Currently Available Medicines</h3>
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Medicines &amp; Availability</h3>
               <form onSubmit={(e) => { e.preventDefault(); setAvailableSearch(availableSearchInput); }} className="flex flex-col min-[420px]:flex-row gap-2 mb-4">
                 <input
                   type="search"
                   value={availableSearchInput}
                   onChange={(e) => setAvailableSearchInput(e.target.value)}
                   placeholder="Search by medicine name or type"
-                  aria-label="Search currently available medicines by name or type"
+                  aria-label="Search medicines by name or type"
                   className="min-w-0 flex-1 h-11 px-4 rounded-xl border border-gray-300 focus:outline-none focus:border-[#166534]"
                 />
                 <button type="submit" className="h-11 w-full min-[420px]:w-auto px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded-xl font-semibold flex items-center justify-center gap-2">
@@ -475,10 +534,14 @@ export default function CustomerApp() {
               </form>
               <div className="grid gap-3 md:grid-cols-2">
                 {searchedAvailableMeds.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">{availableMeds.length === 0 ? "No medicines currently available" : "No medicines match your search"}</p>
+                  <p className="text-gray-500 text-center py-4">{customerMeds.length === 0 ? "No medicines in inventory" : "No medicines match your search"}</p>
                 ) : searchedAvailableMeds.map((med, i) => (
                   <div key={med.id} className="slide-in-left" style={{ animationDelay: `${0.4 + i * 0.05}s` }}>
-                    <div className="bg-white border-l-4 border-l-[#4ade80] p-3 sm:p-4 rounded-xl hover:shadow-md transition-shadow">
+                    <div className={`bg-white border-l-4 p-3 sm:p-4 rounded-xl transition-shadow ${
+                      isStockItemAvailable(med)
+                        ? "border-l-[#4ade80] hover:shadow-md"
+                        : "border-l-gray-400 opacity-70"
+                    }`}>
                       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -489,19 +552,29 @@ export default function CustomerApp() {
                             <p className="text-sm text-gray-500 break-words">{med.type}</p>
                           </div>
                         </div>
-                        <span className="inline-block px-2 sm:px-3 py-1 bg-green-100 text-[#166534] rounded text-[10px] sm:text-xs font-semibold whitespace-nowrap">
+                        <span className={`inline-block px-2 sm:px-3 py-1 rounded text-[10px] sm:text-xs font-semibold whitespace-nowrap ${
+                          isStockItemAvailable(med) ? "bg-green-100 text-[#166534]" : "bg-gray-100 text-gray-600"
+                        }`}>
                           Quantity: {med.stock}
                         </span>
                       </div>
                       <span
                         className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold ${
-                          isLowStock(med.stock)
+                          !isStockItemAvailable(med)
+                            ? "bg-gray-100 text-gray-700"
+                            : isLowStock(med.stock)
                             ? "bg-red-100 text-red-700"
                             : "bg-green-100 text-green-700"
                         }`}
-                        aria-label={`${med.name} stock status: ${isLowStock(med.stock) ? "Low Stock" : "In Stock"}`}
+                        aria-label={`${med.name} availability: ${
+                          !isStockItemAvailable(med)
+                            ? med.stock <= 0 ? "Out of Stock" : "Unavailable"
+                            : isLowStock(med.stock) ? "Low Stock" : "In Stock"
+                        }`}
                       >
-                        {isLowStock(med.stock) ? "Low Stock" : "In Stock"}
+                        {!isStockItemAvailable(med)
+                          ? med.stock <= 0 ? "Out of Stock" : "Unavailable"
+                          : isLowStock(med.stock) ? "Low Stock" : "In Stock"}
                       </span>
                     </div>
                   </div>
@@ -669,13 +742,13 @@ export default function CustomerApp() {
                         : "border-gray-200 bg-white text-gray-700 hover:border-blue-500 hover:bg-blue-50"
                     }`}>
                     <AccessibilityIcon className={`w-10 h-10 ${form.patientType === "pwd" ? "text-blue-200" : "text-gray-400"}`} />
-                    <span className="font-bold text-base">PWD</span>
+                    <span className="font-bold text-base">PWD / Senior Citizen / Pregnant</span>
                     <span className={`text-xs text-center ${form.patientType === "pwd" ? "text-blue-200" : "text-gray-400"}`}>Priority queue</span>
                   </button>
                 </div>
                 {form.patientType === "pwd" && (
                   <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
-                    PWD patients are given priority in the queue. Please present your PWD ID at the counter.
+                    PWD, Senior Citizen, and Pregnant patients are given priority in the queue. Please present your ID at the counter.
                   </div>
                 )}
               </div>
@@ -706,16 +779,38 @@ export default function CustomerApp() {
                 </div>
                 <div className="grid gap-3 max-h-72 overflow-y-auto pr-1">
                   {searchedNeededMeds.length === 0 ? (
-                    <p className="text-gray-500 text-center py-4">{availableMeds.length === 0 ? "No medicines available" : "No medicines match your search"}</p>
+                    <p className="text-gray-500 text-center py-4">{customerMeds.length === 0 ? "No medicines in inventory" : "No medicines match your search"}</p>
                   ) : searchedNeededMeds.map((med) => {
                     const selected = form.selectedMedicines.find((m) => m.name === med.name);
                     const isSelected = !!selected;
+                    const medicineAvailable = isStockItemAvailable(med);
+                    const availabilityLabel = medicineAvailable
+                      ? isLowStock(med.stock) ? "Low Stock" : "In Stock"
+                      : med.stock <= 0 ? "Out of Stock" : "Unavailable";
+                    const availabilityClass = medicineAvailable
+                      ? isLowStock(med.stock)
+                        ? "bg-red-100 text-red-700"
+                        : "bg-green-100 text-[#166534]"
+                      : "bg-gray-100 text-gray-700";
                     const qty = selected?.quantity ?? 1;
                     return (
                       <div key={med.id}
-                        onClick={() => toggleMedicine(med.name)}
-                        className={`flex flex-col sm:flex-row sm:items-center gap-3 p-3 sm:p-4 rounded-xl border-2 cursor-pointer transition-all duration-150 ${
-                          isSelected ? "border-[#166534] bg-green-50 shadow-sm" : "border-gray-200 bg-white hover:border-green-300 hover:bg-green-50/50"
+                        role="button"
+                        aria-disabled={!medicineAvailable}
+                        tabIndex={medicineAvailable ? 0 : -1}
+                        onClick={() => medicineAvailable && toggleMedicine(med.name)}
+                        onKeyDown={(event) => {
+                          if (medicineAvailable && (event.key === "Enter" || event.key === " ")) {
+                            event.preventDefault();
+                            toggleMedicine(med.name);
+                          }
+                        }}
+                        className={`flex flex-col sm:flex-row sm:items-center gap-3 p-3 sm:p-4 rounded-xl border-2 transition-all duration-150 ${
+                          !medicineAvailable
+                            ? "border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed"
+                            : isSelected
+                              ? "border-[#166534] bg-green-50 shadow-sm cursor-pointer"
+                              : "border-gray-200 bg-white hover:border-green-300 hover:bg-green-50/50 cursor-pointer"
                         }`}>
                         <div className="flex items-start gap-3 min-w-0 w-full sm:flex-1">
                           <div className="flex-shrink-0 mt-0.5">
@@ -728,19 +823,15 @@ export default function CustomerApp() {
                             <p className="text-sm text-gray-500 break-words">{med.type}</p>
                           </div>
                           <div className="flex sm:hidden flex-col items-end gap-1 flex-shrink-0">
-                            <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${
-                              isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-[#166534]"
-                            }`}>
+                            <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${availabilityClass}`}>
                               Qty: {med.stock}
                             </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-                            }`}>
-                              {isLowStock(med.stock) ? "Low" : "In Stock"}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${availabilityClass}`}>
+                              {availabilityLabel}
                             </span>
                           </div>
                         </div>
-                        {isSelected && (
+                        {isSelected && medicineAvailable && (
                           <div className="flex items-center justify-between sm:justify-start gap-2 bg-white rounded-lg border border-gray-300 px-2 w-full sm:w-auto"
                             onClick={(e) => e.stopPropagation()}>
                             <button type="button" onClick={() => updateQty(med.name, qty - 1)}
@@ -757,7 +848,7 @@ export default function CustomerApp() {
                               className="w-12 sm:w-14 text-center font-semibold text-[#166534] border-0 outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
                             <button type="button" onClick={() => updateQty(med.name, qty + 1, true)}
-                              disabled={qty >= med.stock}
+                              disabled={!medicineAvailable || qty >= med.stock}
                               aria-label={`Increase quantity for ${med.name}`}
                               className="p-2 flex-shrink-0 text-gray-600 hover:text-[#166534] disabled:text-gray-300 disabled:cursor-not-allowed transition-colors">
                               <PlusIcon className="w-4 h-4" />
@@ -765,15 +856,11 @@ export default function CustomerApp() {
                           </div>
                         )}
                         <div className="hidden sm:flex flex-col items-end gap-1 flex-shrink-0">
-                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                            isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-[#166534]"
-                          }`}>
+                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${availabilityClass}`}>
                             Quantity: {med.stock}
                           </span>
-                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                            isLowStock(med.stock) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-                          }`}>
-                            {isLowStock(med.stock) ? "Low Stock" : "In Stock"}
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${availabilityClass}`}>
+                            {availabilityLabel}
                           </span>
                         </div>
                       </div>
@@ -999,9 +1086,14 @@ export default function CustomerApp() {
                 <RefreshCwIcon className={`mr-2 w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} /> Refresh Status
               </button>
               {currentEntry.status === "getready" && (
-                <button onClick={() => navigate("home")}
-                  className="h-14 bg-green-600 hover:bg-green-700 text-white text-base font-semibold rounded-2xl flex items-center justify-center">
-                  <CheckCircleIcon className="mr-2 w-5 h-5" /> I Have Been Served
+                <button onClick={handleMarkServed} disabled={isMarkingServed}
+                  className="h-14 bg-green-600 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 text-white text-base font-semibold rounded-2xl flex items-center justify-center">
+                  {isMarkingServed ? (
+                    <RefreshCwIcon className="mr-2 w-5 h-5 animate-spin" />
+                  ) : (
+                    <CheckCircleIcon className="mr-2 w-5 h-5" />
+                  )}
+                  {isMarkingServed ? "Updating..." : "I Have Been Served"}
                 </button>
               )}
               <button onClick={() => navigate("home")} className="text-gray-500 hover:text-gray-700 py-3 text-sm font-medium">

@@ -114,6 +114,19 @@ value in `netlify.toml`.
    Vite admin app after changing its environment variables. Do not commit
    `.env.local`.
 
+Queue-advance SMS runs from a Firestore-triggered Firebase Function and dispatches
+through the backend SMS helper. Set `QUEUE_ADVANCE_WEBHOOK_SECRET` to the same
+high-entropy value in the backend environment and Firebase Functions Secret
+Manager (`firebase functions:secrets:set QUEUE_ADVANCE_WEBHOOK_SECRET`). Set
+`MEDISERVE_API_BASE_URL` in an uncommitted `functions/.env.<project-id>` file
+to the deployed Next.js backend URL (for example,
+`https://your-backend.example.com`), then deploy with
+`firebase deploy --only functions`. The Function runs after a ticket is served
+or a ticket becomes Processing/Get Ready, selects the next active ticket using
+PWD-priority/FIFO ordering, and notifies only active queue numbers in the range
+`N + 1` through `N + 5`. It stores per-ticket notification records to prevent
+duplicate SMS dispatch for the same ongoing number.
+
 For Netlify, add all five server-side variables
 (`FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`,
 `FIREBASE_ADMIN_PRIVATE_KEY`, `IPROGSMS_API_KEY`, and `OTP_HASH_SECRET`) under

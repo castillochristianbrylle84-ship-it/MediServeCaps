@@ -21,6 +21,7 @@ import {
   onSnapshot,
   query,
   where,
+  runTransaction,
   serverTimestamp,
   Timestamp,
   type DocumentData,
@@ -37,6 +38,7 @@ export interface StockItem {
   type: string;
   stock: number;
   available: boolean;
+  manualUnavailable?: boolean;
   genericName?: string;
   dosageStrength?: string;
   dosageForm?: string;
@@ -72,16 +74,40 @@ export interface QueueEntry {
 
 // ─── Stock / Medicine helpers ─────────────────────────────────────────────────
 
+function toStockItem(id: string, data: DocumentData): StockItem {
+  const stock =
+    typeof data.stock === "number" && Number.isFinite(data.stock)
+      ? Math.max(0, data.stock)
+      : 0;
+  const manualUnavailable =
+    data.manualUnavailable === true ||
+    (data.manualUnavailable === undefined &&
+      data.available === false &&
+      stock > 0);
+
+  return {
+    ...data,
+    id,
+    stock,
+    manualUnavailable,
+    available: stock > 0 && data.available === true && !manualUnavailable,
+  } as StockItem;
+}
+
+export function isStockItemAvailable(item: StockItem): boolean {
+  return item.stock > 0 && item.available && item.manualUnavailable !== true;
+}
+
 export async function getStockItems(): Promise<StockItem[]> {
   const snap = await getDocs(collection(db, "stock"));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as StockItem));
+  return snap.docs.map((d) => toStockItem(d.id, d.data()));
 }
 
 export function subscribeStockItems(
   cb: (items: StockItem[]) => void
 ): Unsubscribe {
   return onSnapshot(collection(db, "stock"), (snap) => {
-    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StockItem)));
+    cb(snap.docs.map((d) => toStockItem(d.id, d.data())));
   });
 }
 
@@ -90,7 +116,13 @@ export async function addStockItem(
 ): Promise<string> {
   const ref = await addDoc(collection(db, "stock"), {
     ...item,
-    available: item.stock > 0 && item.available,
+    stock: Number.isFinite(item.stock) ? Math.max(0, item.stock) : 0,
+    manualUnavailable: item.manualUnavailable === true,
+    available:
+      item.stock > 0 &&
+      Number.isFinite(item.stock) &&
+      item.available &&
+      item.manualUnavailable !== true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -101,12 +133,63 @@ export async function updateStockItem(
   id: string,
   data: Partial<Omit<StockItem, "id">>
 ): Promise<void> {
-  const normalizedData = data.stock !== undefined && data.stock <= 0
-    ? { ...data, available: false }
-    : data;
-  await updateDoc(doc(db, "stock", id), {
-    ...normalizedData,
-    updatedAt: serverTimestamp(),
+  const stockRef = doc(db, "stock", id);
+  await runTransaction(db, async (transaction) => {
+    const stockSnap = await transaction.get(stockRef);
+    if (!stockSnap.exists()) throw new Error("Medicine not found.");
+
+    const currentData = stockSnap.data();
+    const currentStock =
+      typeof currentData.stock === "number" && Number.isFinite(currentData.stock)
+        ? Math.max(0, currentData.stock)
+        : 0;
+    const currentManualUnavailable =
+      currentData.manualUnavailable === true ||
+      (currentData.manualUnavailable === undefined &&
+        currentData.available === false &&
+        currentStock > 0);
+    const manualUnavailable =
+      typeof data.manualUnavailable === "boolean"
+        ? data.manualUnavailable
+        : currentManualUnavailable;
+    const stock =
+      data.stock === undefined
+        ? currentStock
+        : Math.max(0, Number.isFinite(data.stock) ? data.stock : 0);
+
+    transaction.update(stockRef, {
+      ...data,
+      stock,
+      manualUnavailable,
+      available: stock > 0 && !manualUnavailable,
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function setStockItemAvailability(
+  id: string,
+  available: boolean
+): Promise<void> {
+  const stockRef = doc(db, "stock", id);
+  await runTransaction(db, async (transaction) => {
+    const stockSnap = await transaction.get(stockRef);
+    if (!stockSnap.exists()) throw new Error("Medicine not found.");
+
+    const stockData = stockSnap.data();
+    const stock =
+      typeof stockData.stock === "number" && Number.isFinite(stockData.stock)
+        ? Math.max(0, stockData.stock)
+        : 0;
+    if (available && stock <= 0) {
+      throw new Error("Restock this medicine before marking it available.");
+    }
+
+    transaction.update(stockRef, {
+      manualUnavailable: !available,
+      available,
+      updatedAt: serverTimestamp(),
+    });
   });
 }
 
@@ -122,7 +205,11 @@ export async function deductStock(
   for (const d of snap.docs) {
     const data = d.data() as StockItem;
     if (data.name === medicineName) {
-      const newStock = Math.max(0, (data.stock ?? 0) - qty);
+      const currentStock =
+        typeof data.stock === "number" && Number.isFinite(data.stock)
+          ? Math.max(0, data.stock)
+          : 0;
+      const newStock = Math.max(0, currentStock - qty);
       await updateDoc(doc(db, "stock", d.id), {
         stock: newStock,
         ...(newStock === 0 ? { available: false } : {}),
@@ -389,10 +476,6 @@ export async function addQueueEntry(
     updatedAt: serverTimestamp(),
   });
 
-  for (let i = 0; i < entry.medicines.length; i++) {
-    await deductStock(entry.medicines[i], entry.quantities[i] ?? 1);
-  }
-
   return ref.id;
 }
 
@@ -400,21 +483,123 @@ export async function updateQueueEntryStatus(
   id: string,
   status: QueueEntry["status"]
 ): Promise<void> {
-  await updateDoc(doc(db, "customers", id), {
-    status,
-    ...(status === "served" ? { dispensedAt: serverTimestamp() } : {}),
-    updatedAt: serverTimestamp(),
-  });
-  // Mirror to orders
-  try {
-    await updateDoc(doc(db, "orders", id), {
-      status,
-      ...(status === "served" ? { dispensedAt: serverTimestamp() } : {}),
-      updatedAt: serverTimestamp(),
+  const customerRef = doc(db, "customers", id);
+
+  if (status !== "served") {
+    await runTransaction(db, async (transaction) => {
+      const customerSnap = await transaction.get(customerRef);
+      if (!customerSnap.exists()) throw new Error("Queue entry not found.");
+
+      const customerData = customerSnap.data();
+      const patientType = customerData.patientType === "pwd" ? "pwd_patients" : "regular_patients";
+      const patientRef = doc(db, patientType, id);
+      const orderRef = doc(db, "orders", id);
+
+      const update = { status, updatedAt: serverTimestamp() };
+      transaction.update(customerRef, update);
+      transaction.set(patientRef, update, { merge: true });
+      transaction.set(orderRef, update, { merge: true });
     });
-  } catch {
-    // order doc may not exist
+    return;
   }
+
+  const stockSnap = await getDocs(collection(db, "stock"));
+  const stockByName = new Map<string, typeof stockSnap.docs[number]>();
+  for (const stockDoc of stockSnap.docs) {
+    const stockData = stockDoc.data();
+    if (typeof stockData.name === "string" && !stockByName.has(stockData.name)) {
+      stockByName.set(stockData.name, stockDoc);
+    }
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const customerSnap = await transaction.get(customerRef);
+    if (!customerSnap.exists()) throw new Error("Queue entry not found.");
+
+    const customerData = customerSnap.data();
+    const alreadyServed =
+      customerData.status === "served" || customerData.wasServed === true;
+    if (alreadyServed) return;
+
+    const patientType =
+      customerData.patientType === "pwd" ? "pwd_patients" : "regular_patients";
+    const patientRef = doc(db, patientType, id);
+    const orderRef = doc(db, "orders", id);
+    const dispensedAt = serverTimestamp();
+
+    const servedUpdate = {
+      status,
+      wasServed: true,
+      dispensedAt,
+      updatedAt: serverTimestamp(),
+    };
+
+    const medicines = Array.isArray(customerData.medicines)
+      ? (customerData.medicines as unknown[])
+      : [];
+    const quantities = Array.isArray(customerData.quantities)
+      ? (customerData.quantities as unknown[])
+      : [];
+    const deductions = new Map<string, number>();
+
+    medicines.forEach((medicine, index) => {
+      if (typeof medicine !== "string") return;
+      const quantity = Number(quantities[index] ?? 1);
+      deductions.set(
+        medicine,
+        (deductions.get(medicine) ?? 0) +
+          (Number.isFinite(quantity) && quantity > 0 ? quantity : 1)
+      );
+    });
+
+    const stockDeductions = [...deductions].flatMap(
+      ([medicineName, quantity]) => {
+        const stockDoc = stockByName.get(medicineName);
+        return stockDoc
+          ? [{ ref: doc(db, "stock", stockDoc.id), quantity }]
+          : [];
+      }
+    );
+    const stockSnapshots = await Promise.all(
+      stockDeductions.map(async ({ ref, quantity }) => ({
+        ref,
+        quantity,
+        snapshot: await transaction.get(ref),
+      }))
+    );
+
+    stockSnapshots.forEach(({ ref, quantity, snapshot: stockCurrent }) => {
+      if (!stockCurrent.exists()) return;
+
+      const stockData = stockCurrent.data();
+      const currentStock =
+        typeof stockData.stock === "number" && Number.isFinite(stockData.stock)
+          ? Math.max(0, stockData.stock)
+          : 0;
+      const newStock = Math.max(0, currentStock - quantity);
+      transaction.update(ref, {
+        stock: newStock,
+        manualUnavailable:
+          stockData.manualUnavailable === true ||
+          (stockData.manualUnavailable === undefined &&
+            stockData.available === false &&
+            currentStock > 0),
+        available:
+          newStock > 0 &&
+          stockData.manualUnavailable !== true &&
+          !(
+            stockData.manualUnavailable === undefined &&
+            stockData.available === false &&
+            currentStock > 0
+          ),
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    transaction.update(customerRef, servedUpdate);
+    transaction.set(patientRef, servedUpdate, { merge: true });
+    transaction.set(orderRef, servedUpdate, { merge: true });
+  });
 }
 
 export async function deleteQueueEntry(id: string): Promise<void> {
