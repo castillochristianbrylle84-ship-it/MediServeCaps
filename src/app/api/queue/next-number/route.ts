@@ -1,5 +1,9 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase-admin";
+import {
+  isQueueRegistrationOpen,
+  QUEUE_REGISTRATION_HOURS_MESSAGE,
+} from "@/lib/queue-hours";
 
 export const runtime = "nodejs";
 
@@ -33,6 +37,13 @@ export async function POST(request: Request) {
     (body.patientType !== "regular" && body.patientType !== "pwd")
   ) {
     return Response.json({ error: "Invalid patient type." }, { status: 400 });
+  }
+
+  if (!isQueueRegistrationOpen()) {
+    return Response.json(
+      { error: QUEUE_REGISTRATION_HOURS_MESSAGE },
+      { status: 403 }
+    );
   }
 
   const patientType: PatientType = body.patientType;
