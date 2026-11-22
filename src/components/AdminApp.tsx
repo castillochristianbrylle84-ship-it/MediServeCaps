@@ -722,13 +722,13 @@ export default function AdminApp() {
   // MAIN RENDER
   // ═══════════════════════════════════════════════════════════════════════════
   return (
-    <div className="bg-gray-50 min-h-screen text-gray-900 font-sans">
+    <div className="admin-app bg-gray-50 min-h-screen text-gray-900 font-sans">
 
       {/* ── Toast Stack ── */}
-      <div className="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">
+      <div className="fixed top-4 right-4 z-50 w-[calc(100%-2rem)] max-w-sm space-y-2 pointer-events-none">
         {toasts.map((t) => (
           <div key={t.id}
-            className={`toast-anim-in px-4 py-3 rounded-xl shadow-lg border text-sm font-semibold pointer-events-auto ${
+            className={`toast-anim-in break-words px-4 py-3 rounded-xl shadow-lg border text-sm font-semibold pointer-events-auto ${
               t.type === "error" ? "bg-red-50 border-red-200 text-red-800" : "bg-emerald-50 border-emerald-200 text-emerald-800"
             }`}>{t.msg}</div>
         ))}
@@ -745,7 +745,7 @@ export default function AdminApp() {
         {sidebarOpen && (
           <div className="fixed inset-0 z-40 lg:hidden">
             <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-            <div className="absolute left-0 top-0 h-full w-72 bg-white shadow-2xl z-50 flex flex-col">
+            <div className="absolute left-0 top-0 h-full w-72 max-w-[calc(100vw-2rem)] bg-white shadow-2xl z-50 flex flex-col">
               {Sidebar}
             </div>
           </div>
@@ -764,7 +764,7 @@ export default function AdminApp() {
               <div className="w-7 h-7 bg-emerald-700 rounded-lg flex items-center justify-center">
                 <PillIcon className="w-4 h-4 text-white" />
               </div>
-              <span className="font-bold text-emerald-700 text-lg">MediServe Admin</span>
+              <span className="whitespace-nowrap font-bold text-emerald-700 text-base sm:text-lg">MediServe Admin</span>
             </div>
             <div className="ml-auto">
               <button onClick={handleLogout} className="text-red-500 hover:text-red-700 p-2 rounded-xl hover:bg-red-50">
@@ -775,14 +775,14 @@ export default function AdminApp() {
 
           {/* ════════════ DASHBOARD ════════════ */}
           {currentPage === "dashboard" && (
-            <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+            <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
               <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-900 mb-1">Dashboard Overview</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Dashboard Overview</h1>
                 <p className="text-gray-500">Monitor pharmacy queue and operations in real time</p>
               </div>
 
               {/* Stats */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
                 {[
                   { title: "Waiting Patients", value: counts.waiting, sub: `${entries.filter((e) => e.status === "waiting" && e.patientType === "pwd").length} PWD priority`, icon: <UsersIcon className="w-6 h-6" /> },
                   { title: "Served Today",      value: counts.served,  sub: "Completed today", icon: <ActivityIcon className="w-6 h-6" /> },
@@ -901,7 +901,7 @@ export default function AdminApp() {
               <div className="grid grid-cols-1 gap-6">
                 {/* Recent Activity */}
                 <div className="bg-white rounded-3xl shadow-sm border border-emerald-100 overflow-hidden">
-                  <div className="flex items-center justify-between px-6 py-5 border-b border-emerald-50">
+                  <div className="flex flex-col min-[420px]:flex-row min-[420px]:items-center justify-between gap-3 px-4 sm:px-6 py-5 border-b border-emerald-50">
                     <h2 className="text-xl font-bold text-gray-900">Recent Activity</h2>
                     <button onClick={() => navigate("queue")} className="flex items-center gap-2 text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-xl font-semibold text-sm">
                       View All <ArrowRightIcon className="w-4 h-4" />
@@ -915,11 +915,11 @@ export default function AdminApp() {
                           const sc = STATUS_CONFIG[entry.status];
                           return (
                             <div key={entry.id} className="px-6 py-4 hover:bg-emerald-50/60 transition-colors flex items-center justify-between">
-                              <div className="flex items-center gap-4">
+                              <div className="flex min-w-0 items-center gap-4">
                                 <div className={`w-3 h-3 rounded-full ${sc.dot}`} />
-                                <div>
-                                  <p className="font-bold text-lg">{entry.queueNumber}</p>
-                                  <p className="text-gray-600 text-sm">{entry.patientName}</p>
+                                <div className="min-w-0">
+                                  <p className="break-words font-bold text-lg">{entry.queueNumber}</p>
+                                  <p className="break-words text-gray-600 text-sm">{entry.patientName}</p>
                                 </div>
                               </div>
                               <div className="text-right">
@@ -947,10 +947,10 @@ export default function AdminApp() {
 
           {/* ════════════ QUEUE PAGE ════════════ */}
           {currentPage === "queue" && (
-            <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+            <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-1">Live Queue Monitoring</h1>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Live Queue Monitoring</h1>
                   <p className="text-gray-500">{counts.waiting} waiting · {counts.served} served today</p>
                 </div>
               </div>
@@ -980,7 +980,7 @@ export default function AdminApp() {
               ) : (
                 <>
                   {/* Desktop Table */}
-                  <div className="hidden lg:block bg-white border border-emerald-100 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="hidden xl:block bg-white border border-emerald-100 rounded-2xl overflow-x-auto shadow-sm">
                     <table className="w-full">
                       <thead>
                         <tr className="bg-emerald-50 border-b border-emerald-100">
@@ -1045,7 +1045,7 @@ export default function AdminApp() {
                   </div>
 
                   {/* Mobile Cards */}
-                  <div className="lg:hidden space-y-3">
+                  <div className="xl:hidden space-y-3">
                     {filteredEntries.map((entry) => {
                       const sc = STATUS_CONFIG[entry.status];
                       const isPWD = entry.patientType === "pwd";
@@ -1062,15 +1062,15 @@ export default function AdminApp() {
                               openQueueEntry(entry);
                             }
                           }}>
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <span className={`text-2xl font-black ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</span>
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div className="min-w-0">
+                              <span className={`break-words text-2xl font-black ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</span>
                               {isPWD && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">PWD</span>}
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${sc.badge}`}>{sc.label}</span>
+                            <span className={`shrink-0 text-xs px-2.5 py-1 rounded-full font-semibold border ${sc.badge}`}>{sc.label}</span>
                           </div>
-                          <p className="font-semibold text-gray-900">{entry.patientName}</p>
-                          <p className="text-gray-500 text-sm mb-3">{entry.address}</p>
+                          <p className="break-words font-semibold text-gray-900">{entry.patientName}</p>
+                          <p className="break-words text-gray-500 text-sm mb-3">{entry.address}</p>
                           <div className="flex flex-wrap gap-1.5 mb-4">
                             {entry.medicines.map((m, i) => (
                               <span key={i} className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full border border-emerald-200 font-medium">
@@ -1089,10 +1089,10 @@ export default function AdminApp() {
 
           {/* ════════════ MEDICINES PAGE ════════════ */}
           {currentPage === "medicines" && (
-            <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+            <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-1">Medicine Inventory</h1>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Medicine Inventory</h1>
                   <p className="text-gray-500">{medicines.length} total · {medicines.filter((m) => m.available).length} available · {lowStockMeds.length} low stock</p>
                 </div>
               </div>
@@ -1147,7 +1147,7 @@ export default function AdminApp() {
               {lowStockMeds.length > 0 && (
                 <div className="mb-6 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
                   <AlertTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-amber-900 font-semibold">Low Stock Alert</p>
                     <p className="text-amber-700 text-sm">{lowStockMeds.map((m) => m.name).join(", ")} — please restock soon.</p>
                   </div>
@@ -1155,7 +1155,7 @@ export default function AdminApp() {
               )}
 
               {/* Desktop Table */}
-              <div className="hidden lg:block bg-white border border-emerald-100 rounded-2xl overflow-hidden shadow-sm">
+              <div className="hidden xl:block bg-white border border-emerald-100 rounded-2xl overflow-x-auto shadow-sm">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-emerald-50 border-b border-emerald-100">
@@ -1219,7 +1219,7 @@ export default function AdminApp() {
               </div>
 
               {/* Mobile Cards */}
-              <div className="lg:hidden space-y-3">
+              <div className="xl:hidden space-y-3">
                 {filteredMedicines.length === 0 ? (
                   <div className="bg-white border border-emerald-100 rounded-2xl p-12 text-center">
                     <BoxIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -1235,9 +1235,9 @@ export default function AdminApp() {
                         <div className="w-11 h-11 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center">
                           <BoxIcon className="w-5 h-5 text-emerald-700" />
                         </div>
-                        <div className="flex-1">
-                          <p className="font-bold text-gray-900">{med.name}</p>
-                          <p className="text-gray-500 text-sm">{med.type}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="break-words font-bold text-gray-900">{med.name}</p>
+                          <p className="break-words text-gray-500 text-sm">{med.type}</p>
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-bold border ${stockColor}`}>
@@ -1271,32 +1271,32 @@ export default function AdminApp() {
       {/* ════════════ QUEUE DETAIL MODAL ════════════ */}
       {modalOpen && selectedEntry && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50 p-4" onClick={() => setModalOpen(false)}>
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl modal-show" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-emerald-50 flex items-start justify-between">
+          <div className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col bg-white rounded-2xl shadow-xl modal-show" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 sm:px-6 py-5 border-b border-emerald-50 flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Patient Details</h2>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Patient Details</h2>
                 <p className="text-sm text-gray-500 mt-1">Queue & requested medicines</p>
               </div>
               <button onClick={() => setModalOpen(false)} className="text-gray-400 hover:text-gray-700">
                 <XIcon className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+            <div className="min-h-0 p-4 sm:p-6 space-y-5 overflow-y-auto">
               {(() => {
                 const entry = selectedEntry;
                 const sc = STATUS_CONFIG[entry.status];
                 const isPWD = entry.patientType === "pwd";
                 return (
                   <>
-                    <div className={`rounded-2xl p-6 text-center ${isPWD ? "bg-blue-50 border border-blue-200" : "bg-emerald-50 border border-emerald-200"}`}>
+                    <div className={`rounded-2xl p-4 sm:p-6 text-center ${isPWD ? "bg-blue-50 border border-blue-200" : "bg-emerald-50 border border-emerald-200"}`}>
                       <p className="text-gray-500 text-sm mb-1">Queue Number</p>
-                      <p className={`text-7xl font-black mb-3 ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</p>
+                      <p className={`break-words text-[clamp(2rem,12vw,4.5rem)] font-black mb-3 ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</p>
                       <div className="flex items-center justify-center gap-2">
                         {isPWD && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm font-semibold border border-blue-200">PWD Priority</span>}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
                       <div className="bg-gray-50 p-4 rounded-xl">
                         <p className="text-gray-400 text-xs mb-1">Name</p>
                         <p className="font-semibold text-sm">{entry.patientName}</p>
@@ -1339,7 +1339,7 @@ export default function AdminApp() {
                           Mark Get Ready {entry.phone ? "& Send SMS" : ""}
                         </button>
                       )}
-                      <div className={`grid gap-2.5 ${entry.status === "processing" || entry.status === "getready" ? "grid-cols-1" : "grid-cols-2"}`}>
+                      <div className={`grid gap-2.5 ${entry.status === "processing" || entry.status === "getready" ? "grid-cols-1" : "grid-cols-1 min-[420px]:grid-cols-2"}`}>
                         {entry.status !== "processing" && entry.status !== "getready" && (
                           <button onClick={() => { handleUpdateStatus(entry.id, "processing"); setModalOpen(false); }}
                             className="h-11 border-2 border-blue-300 text-blue-700 hover:bg-blue-50 font-semibold rounded-xl">
@@ -1371,7 +1371,7 @@ export default function AdminApp() {
       {medModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 z-50 p-4" onClick={() => setMedModalOpen(false)}>
           <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-xl modal-show" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-emerald-50 flex items-start justify-between">
+            <div className="px-4 sm:px-6 py-5 border-b border-emerald-50 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{editingMed ? "Edit Medicine" : "Add New Medicine"}</h2>
                 <p className="text-sm text-gray-500 mt-1">{editingMed ? "Update the details and save." : "Fill out the details below."}</p>
@@ -1380,7 +1380,7 @@ export default function AdminApp() {
                 <XIcon className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleMedSubmit} className="p-6 space-y-6">
+            <form onSubmit={handleMedSubmit} className="p-4 sm:p-6 space-y-6">
               <section>
                 <h3 className="text-lg font-bold text-gray-900 pb-3 border-b border-gray-100 mb-4">Medicine Information</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -451,7 +451,7 @@ export default function CustomerApp() {
             <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg mb-6 sm:mb-8 slide-up" style={{ animationDelay: "0.2s" }}>
               <div className="flex gap-3">
                 <AlertIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-semibold text-amber-900 mb-1">Important Notice</p>
                   <p className="text-sm text-amber-800">Please present your doctor&apos;s prescription to the counter for proper medicine dispensing.</p>
                 </div>
@@ -509,7 +509,7 @@ export default function CustomerApp() {
               </div>
             </div>
 
-            <div className="fixed bottom-0 left-0 right-0 p-4 sm:p-6 bg-white border-t border-gray-200 shadow-lg">
+            <div className="fixed bottom-0 left-0 right-0 z-30 p-4 sm:p-6 bg-white border-t border-gray-200 shadow-lg">
               <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto grid grid-cols-[auto_1fr] gap-3">
                 <button onClick={() => navigate("history")}
                   className="h-16 px-5 border-2 border-[#166534] text-[#166534] hover:bg-green-50 text-base font-semibold rounded-xl flex items-center justify-center gap-2">
@@ -523,7 +523,7 @@ export default function CustomerApp() {
                 </button>
               </div>
             </div>
-            <div className="h-28" />
+            <div className="customer-home-bottom-space" aria-hidden="true" />
           </div>
         </div>
       )}

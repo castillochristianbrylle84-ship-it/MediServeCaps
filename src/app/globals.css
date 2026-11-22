@@ -37,7 +37,9 @@
 .animate-spin  { animation: spin 1s linear infinite; }
 
 .customer-app,
-.customer-app * {
+.customer-app *,
+.admin-app,
+.admin-app * {
   box-sizing: border-box;
 }
 
@@ -46,15 +48,36 @@
   overflow-x: hidden;
 }
 
+.admin-app {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.customer-app > div:not(.fixed),
+.admin-app > div:not(.fixed) {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 .customer-app input,
-.customer-app button {
+.customer-app button,
+.admin-app input,
+.admin-app button {
   touch-action: manipulation;
+}
+
+.customer-home-bottom-space {
+  height: 112px;
 }
 
 @media (max-width: 639px) {
   .customer-app .fixed.bottom-0 {
     padding: 12px 16px;
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .customer-home-bottom-space {
+    height: calc(80px + env(safe-area-inset-bottom, 0px));
   }
 
   .customer-app .fixed.bottom-0 > div {

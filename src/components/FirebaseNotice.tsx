@@ -2,8 +2,8 @@
 
 export default function FirebaseNotice({ error }: { error: string }) {
   return (
-    <div className="min-h-screen bg-amber-50 flex items-center justify-center p-6">
-      <div className="max-w-lg w-full bg-white rounded-3xl shadow-xl border border-amber-200 p-8">
+    <div className="min-h-screen bg-amber-50 flex items-center justify-center p-4 sm:p-6">
+      <div className="max-w-lg w-full bg-white rounded-3xl shadow-xl border border-amber-200 p-5 sm:p-8">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-2xl">🔥</div>
           <div>
