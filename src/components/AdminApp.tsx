@@ -251,6 +251,11 @@ export default function AdminApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expiryNotificationsOpen, setExpiryNotificationsOpen] = useState(false);
   const [expiryToday, setExpiryToday] = useState<string | null>(null);
+  const [focusedMedicine, setFocusedMedicine] = useState<{
+    id: string;
+    requestId: number;
+  } | null>(null);
+  const medicineFocusRequestId = useRef(0);
 
   // Data
   const [medicines, setMedicines] = useState<StockItem[]>([]);
@@ -301,6 +306,31 @@ export default function AdminApp() {
     const intervalId = window.setInterval(updateToday, 60_000);
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (currentPage !== "medicines" || !focusedMedicine) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const target = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-medicine-id]")
+      ).find(
+        (element) =>
+          element.dataset.medicineId === focusedMedicine.id &&
+          element.getClientRects().length > 0
+      );
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    const timeoutId = window.setTimeout(() => {
+      setFocusedMedicine((current) =>
+        current?.requestId === focusedMedicine.requestId ? null : current
+      );
+    }, 2500);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentPage, focusedMedicine]);
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -478,6 +508,7 @@ export default function AdminApp() {
     setCurrentPage(page);
     setSidebarOpen(false);
     setExpiryNotificationsOpen(false);
+    if (page !== "medicines") setFocusedMedicine(null);
   }
 
   // ─── Queue actions ────────────────────────────────────────────────────────
@@ -839,6 +870,10 @@ export default function AdminApp() {
                   key={`${medicine.id}:${medicine.expirationDate}`}
                   type="button"
                   onClick={() => {
+                    setFocusedMedicine({
+                      id: medicine.id,
+                      requestId: ++medicineFocusRequestId.current,
+                    });
                     setMedicineTypeFilter("all");
                     setExpiryNotificationsOpen(false);
                     navigate("medicines");
@@ -1388,7 +1423,15 @@ export default function AdminApp() {
                         ? getDaysUntilExpiration(med.expirationDate, expiryToday)
                         : null;
                       return (
-                        <tr key={med.id} className="hover:bg-emerald-50/40">
+                        <tr
+                          key={med.id}
+                          data-medicine-id={med.id}
+                          className={`scroll-mt-24 transition-colors ${
+                            focusedMedicine?.id === med.id
+                              ? "bg-amber-100 outline outline-2 outline-amber-400"
+                              : "hover:bg-emerald-50/40"
+                          }`}
+                        >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-4">
                               <div className="w-11 h-11 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center">
@@ -1466,7 +1509,15 @@ export default function AdminApp() {
                     ? getDaysUntilExpiration(med.expirationDate, expiryToday)
                     : null;
                   return (
-                    <div key={med.id} className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm">
+                    <div
+                      key={med.id}
+                      data-medicine-id={med.id}
+                      className={`scroll-mt-24 rounded-2xl p-5 shadow-sm transition-colors ${
+                        focusedMedicine?.id === med.id
+                          ? "border-amber-400 bg-amber-50 ring-2 ring-amber-300 ring-offset-2"
+                          : "border border-emerald-100 bg-white"
+                      }`}
+                    >
                       <div className="flex items-start gap-4 mb-4">
                         <div className="w-11 h-11 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center">
                           <BoxIcon className="w-5 h-5 text-emerald-700" />
