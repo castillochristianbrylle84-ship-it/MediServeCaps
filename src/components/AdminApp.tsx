@@ -869,17 +869,14 @@ export default function AdminApp() {
   const Sidebar = (
     <div className="flex flex-col h-full">
       <div className="px-6 py-6 border-b border-gray-100">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="w-10 h-10 shrink-0 bg-emerald-700 rounded-xl flex items-center justify-center">
-              <PillIcon className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-extrabold text-emerald-700 leading-tight">MediServe</h1>
-              <p className="text-xs text-gray-400">Admin Panel</p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-emerald-700 rounded-xl flex items-center justify-center">
+            <PillIcon className="w-6 h-6 text-white" />
           </div>
-          {renderExpiryBell()}
+          <div>
+            <h1 className="text-lg font-extrabold text-emerald-700 leading-tight">MediServe</h1>
+            <p className="text-xs text-gray-400">Admin Panel</p>
+          </div>
         </div>
       </div>
 
@@ -934,6 +931,10 @@ export default function AdminApp() {
                   : "bg-emerald-50 border-emerald-200 text-emerald-800"
             }`}>{t.msg}</div>
         ))}
+      </div>
+
+      <div className="fixed right-6 top-4 z-40 hidden lg:block">
+        {renderExpiryBell()}
       </div>
 
       <div className="flex h-full min-h-0 overflow-hidden">
