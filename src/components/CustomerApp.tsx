@@ -429,7 +429,7 @@ export default function CustomerApp() {
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
           {/* Header */}
           <div className="bg-[#166534] text-white py-5 sm:py-8 px-4 sm:px-6 shadow-lg">
-            <div className="flex items-center justify-between max-w-2xl lg:max-w-5xl mx-auto">
+            <div className="flex items-center justify-between max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#4ade80] rounded-full flex items-center justify-center flex-shrink-0">
                   <PillIcon className="w-6 h-6 sm:w-7 sm:h-7 text-[#166534]" />
@@ -442,7 +442,7 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 py-5 sm:py-6 max-w-2xl lg:max-w-5xl mx-auto">
+          <div className="px-4 sm:px-6 py-5 sm:py-6 max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto">
             <div className="mb-6 sm:mb-8 slide-up" style={{ animationDelay: "0.1s" }}>
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Welcome</h2>
               <p className="text-sm sm:text-base text-gray-600">Get your queue number and wait comfortably for your turn</p>
@@ -473,7 +473,7 @@ export default function CustomerApp() {
                   <SearchIcon className="w-4 h-4" /> Search
                 </button>
               </form>
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 {searchedAvailableMeds.length === 0 ? (
                   <p className="text-gray-500 text-center py-4">{availableMeds.length === 0 ? "No medicines currently available" : "No medicines match your search"}</p>
                 ) : searchedAvailableMeds.map((med, i) => (
@@ -510,7 +510,7 @@ export default function CustomerApp() {
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 p-4 sm:p-6 bg-white border-t border-gray-200 shadow-lg">
-              <div className="max-w-2xl lg:max-w-5xl mx-auto grid grid-cols-[auto_1fr] gap-3">
+              <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto grid grid-cols-[auto_1fr] gap-3">
                 <button onClick={() => navigate("history")}
                   className="h-16 px-5 border-2 border-[#166534] text-[#166534] hover:bg-green-50 text-base font-semibold rounded-xl flex items-center justify-center gap-2">
                   <ClockIcon className="w-5 h-5" />
@@ -532,7 +532,7 @@ export default function CustomerApp() {
       {page === "history" && (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white pb-12">
           <div className="bg-[#166534] text-white py-6 px-4 sm:px-6 shadow-lg">
-            <div className="flex items-center gap-3 max-w-2xl lg:max-w-4xl mx-auto">
+            <div className="flex items-center gap-3 max-w-2xl md:max-w-4xl mx-auto">
               <button onClick={() => navigate("home")} className="text-white hover:bg-white/20 p-2 rounded-xl" aria-label="Back to home">
                 <ArrowLeftIcon className="w-6 h-6" />
               </button>
@@ -543,7 +543,7 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 py-8 max-w-2xl lg:max-w-4xl mx-auto">
+          <div className="px-4 sm:px-6 py-8 max-w-2xl md:max-w-4xl mx-auto">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Your Queue Numbers</h2>
             {historyEntries.length === 0 ? (
               <div className="bg-white rounded-2xl p-6 text-center text-gray-500 shadow-sm">
@@ -590,7 +590,7 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 py-8 max-w-2xl lg:max-w-3xl mx-auto">
+          <div className="px-4 sm:px-6 py-8 max-w-2xl md:max-w-3xl mx-auto">
             <form onSubmit={handleSubmit} className="space-y-8">
 
               {/* Name */}
@@ -812,7 +812,7 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 py-8 max-w-2xl lg:max-w-4xl mx-auto">
+          <div className="px-4 sm:px-6 py-8 max-w-2xl md:max-w-4xl mx-auto">
             {/* Queue Card */}
             <div className={`rounded-3xl overflow-hidden shadow-2xl mb-6 ${currentEntry.patientType === "pwd" ? "bg-gradient-to-br from-blue-700 to-blue-900" : "bg-gradient-to-br from-[#166534] to-[#14532d]"}`}>
               <div className="px-4 sm:px-6 pt-6 flex justify-end">
@@ -923,7 +923,7 @@ export default function CustomerApp() {
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 pt-8 max-w-2xl lg:max-w-4xl mx-auto">
+          <div className="px-4 sm:px-6 pt-8 max-w-2xl md:max-w-4xl mx-auto">
             <div className="text-center mb-10">
               <p className="text-gray-500 text-sm font-medium">YOUR QUEUE NUMBER</p>
               <p className="text-[clamp(2rem,10vw,4.5rem)] font-bold text-[#166534] tracking-tighter mt-2 break-words">{currentEntry.queueNumber}</p>
