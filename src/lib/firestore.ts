@@ -67,9 +67,54 @@ export interface QueueEntry {
   status: "waiting" | "processing" | "getready" | "served" | "archived";
   timestamp: string; // ISO string for compat with existing UI
   dispensedAt?: string;
+  readyAt?: string;
+  archivedAt?: string;
+  archivedReason?: string;
   wasServed?: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+}
+
+export const GET_READY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+export function isGetReadyExpired(
+  entry: Pick<QueueEntry, "status"> & {
+    readyAt?: string;
+    timestamp?: string;
+    updatedAt?: Timestamp;
+  },
+  nowMs = Date.now()
+): boolean {
+  if (entry.status !== "getready") return false;
+  const readyTime = entry.readyAt
+    ? Date.parse(entry.readyAt)
+    : entry.updatedAt instanceof Timestamp
+      ? entry.updatedAt.toMillis()
+      : entry.timestamp
+        ? Date.parse(entry.timestamp)
+        : 0;
+  if (!readyTime || isNaN(readyTime)) return false;
+  return nowMs - readyTime >= GET_READY_TIMEOUT_MS;
+}
+
+export function getReadyRemainingMs(
+  entry: Pick<QueueEntry, "status"> & {
+    readyAt?: string;
+    timestamp?: string;
+    updatedAt?: Timestamp;
+  },
+  nowMs = Date.now()
+): number {
+  if (entry.status !== "getready") return 0;
+  const readyTime = entry.readyAt
+    ? Date.parse(entry.readyAt)
+    : entry.updatedAt instanceof Timestamp
+      ? entry.updatedAt.toMillis()
+      : entry.timestamp
+        ? Date.parse(entry.timestamp)
+        : 0;
+  if (!readyTime || isNaN(readyTime)) return 0;
+  return Math.max(0, GET_READY_TIMEOUT_MS - (nowMs - readyTime));
 }
 
 // ─── Stock / Medicine helpers ─────────────────────────────────────────────────
@@ -265,9 +310,72 @@ function snapToEntries(snap: QuerySnapshot<DocumentData>): QueueEntry[] {
           : typeof data.dispensedAt === "string"
             ? data.dispensedAt
             : undefined,
+      readyAt:
+        data.readyAt instanceof Timestamp
+          ? data.readyAt.toDate().toISOString()
+          : typeof data.readyAt === "string"
+            ? data.readyAt
+            : data.status === "getready" && data.updatedAt instanceof Timestamp
+              ? data.updatedAt.toDate().toISOString()
+              : undefined,
+      archivedAt:
+        data.archivedAt instanceof Timestamp
+          ? data.archivedAt.toDate().toISOString()
+          : typeof data.archivedAt === "string"
+            ? data.archivedAt
+            : undefined,
+      archivedReason:
+        typeof data.archivedReason === "string" ? data.archivedReason : undefined,
       wasServed: data.wasServed === true,
+      updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt : undefined,
+      createdAt: data.createdAt instanceof Timestamp ? data.createdAt : undefined,
     } as QueueEntry;
   });
+}
+
+export async function getQueueEntry(id: string): Promise<QueueEntry | null> {
+  const snap = await getDoc(doc(db, "customers", id));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return {
+    id: snap.id,
+    queueDate: data.queueDate ?? "",
+    queueNumber: data.queueNumber ?? "",
+    patientName: data.patientName ?? "",
+    address: data.address ?? "",
+    phone: data.phone ?? "",
+    patientType: data.patientType ?? "regular",
+    seniorIdNumber: data.seniorIdNumber ?? "",
+    medicines: data.medicines ?? [],
+    quantities: data.quantities ?? [],
+    status: data.status ?? "waiting",
+    timestamp: data.timestamp ?? new Date().toISOString(),
+    dispensedAt:
+      data.dispensedAt instanceof Timestamp
+        ? data.dispensedAt.toDate().toISOString()
+        : typeof data.dispensedAt === "string"
+          ? data.dispensedAt
+          : undefined,
+    readyAt:
+      data.readyAt instanceof Timestamp
+        ? data.readyAt.toDate().toISOString()
+        : typeof data.readyAt === "string"
+          ? data.readyAt
+          : data.status === "getready" && data.updatedAt instanceof Timestamp
+            ? data.updatedAt.toDate().toISOString()
+            : undefined,
+    archivedAt:
+      data.archivedAt instanceof Timestamp
+        ? data.archivedAt.toDate().toISOString()
+        : typeof data.archivedAt === "string"
+          ? data.archivedAt
+          : undefined,
+    archivedReason:
+      typeof data.archivedReason === "string" ? data.archivedReason : undefined,
+    wasServed: data.wasServed === true,
+    updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt : undefined,
+    createdAt: data.createdAt instanceof Timestamp ? data.createdAt : undefined,
+  } as QueueEntry;
 }
 
 export async function getQueueEntriesForDateRange(
@@ -481,7 +589,8 @@ export async function addQueueEntry(
 
 export async function updateQueueEntryStatus(
   id: string,
-  status: QueueEntry["status"]
+  status: QueueEntry["status"],
+  metadata?: { archivedReason?: string }
 ): Promise<void> {
   const customerRef = doc(db, "customers", id);
   const activeQueueRefs =
@@ -513,10 +622,51 @@ export async function updateQueueEntryStatus(
             entrySnap.get("wasServed") !== true
         );
         if (alreadyReady) {
-          const queueNumber = alreadyReady.get("queueNumber") ?? "unknown";
-          throw new Error(
-            `Queue #${queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`
-          );
+          const readyAtVal = alreadyReady.get("readyAt");
+          const updatedAtVal = alreadyReady.get("updatedAt");
+          const timestampVal = alreadyReady.get("timestamp");
+          const readyTime =
+            readyAtVal instanceof Timestamp
+              ? readyAtVal.toMillis()
+              : typeof readyAtVal === "string"
+                ? Date.parse(readyAtVal)
+                : updatedAtVal instanceof Timestamp
+                  ? updatedAtVal.toMillis()
+                  : typeof timestampVal === "string"
+                    ? Date.parse(timestampVal)
+                    : 0;
+          const isExpired =
+            readyTime > 0 && Date.now() - readyTime >= GET_READY_TIMEOUT_MS;
+
+          if (isExpired) {
+            // Auto-archive the expired ready entry right in this transaction!
+            const expiredPatientType =
+              alreadyReady.get("patientType") === "pwd"
+                ? "pwd_patients"
+                : "regular_patients";
+            const archiveUpdate = {
+              status: "archived",
+              archivedAt: serverTimestamp(),
+              archivedReason: "no_show",
+              updatedAt: serverTimestamp(),
+            };
+            transaction.update(alreadyReady.ref, archiveUpdate);
+            transaction.set(
+              doc(db, expiredPatientType, alreadyReady.id),
+              archiveUpdate,
+              { merge: true }
+            );
+            transaction.set(
+              doc(db, "orders", alreadyReady.id),
+              archiveUpdate,
+              { merge: true }
+            );
+          } else {
+            const queueNumber = alreadyReady.get("queueNumber") ?? "unknown";
+            throw new Error(
+              `Queue #${queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`
+            );
+          }
         }
       }
 
@@ -525,7 +675,17 @@ export async function updateQueueEntryStatus(
       const patientRef = doc(db, patientType, id);
       const orderRef = doc(db, "orders", id);
 
-      const update = { status, updatedAt: serverTimestamp() };
+      const update: Record<string, unknown> = {
+        status,
+        updatedAt: serverTimestamp(),
+        ...(status === "getready" ? { readyAt: serverTimestamp() } : {}),
+        ...(status === "archived"
+          ? {
+              archivedAt: serverTimestamp(),
+              archivedReason: metadata?.archivedReason ?? "no_show",
+            }
+          : {}),
+      };
       transaction.update(customerRef, update);
       transaction.set(patientRef, update, { merge: true });
       transaction.set(orderRef, update, { merge: true });
@@ -630,6 +790,13 @@ export async function updateQueueEntryStatus(
     transaction.set(patientRef, servedUpdate, { merge: true });
     transaction.set(orderRef, servedUpdate, { merge: true });
   });
+}
+
+export async function archiveQueueEntry(
+  id: string,
+  reason = "no_show"
+): Promise<void> {
+  return updateQueueEntryStatus(id, "archived", { archivedReason: reason });
 }
 
 export async function deleteQueueEntry(id: string): Promise<void> {

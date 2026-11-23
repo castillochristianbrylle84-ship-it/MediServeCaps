@@ -9,9 +9,19 @@ import {
   getStockItems,
   isStockItemAvailable,
   updateQueueEntryStatus,
+  getQueueEntry,
+  isGetReadyExpired,
+  getReadyRemainingMs,
   type StockItem,
   type QueueEntry,
 } from "@/lib/firestore";
+
+function formatRemainingTime(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
 //  Types 
 type Page = "home" | "register" | "queue" | "track" | "history";
 
@@ -129,6 +139,9 @@ export default function CustomerApp() {
   const [isRequestingOtp, setIsRequestingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [historyEntryIds, setHistoryEntryIds] = useState<string[]>(loadSavedQueueHistory);
+  const [extraHistoryEntries, setExtraHistoryEntries] = useState<Map<string, QueueEntry>>(new Map());
+  const [queueNoticeModal, setQueueNoticeModal] = useState<QueueEntry | null>(null);
+  const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMarkingServed, setIsMarkingServed] = useState(false);
   const [availableSearchInput, setAvailableSearchInput] = useState("");
@@ -143,6 +156,57 @@ export default function CustomerApp() {
     patientType: "regular",
     selectedMedicines: [],
   });
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Fetch any history entry not in today's realtime entries
+  useEffect(() => {
+    let isMounted = true;
+    const missingIds = historyEntryIds.filter(
+      (id) => !entries.some((e) => e.id === id) && !extraHistoryEntries.has(id)
+    );
+    if (missingIds.length === 0) return;
+
+    Promise.all(missingIds.map((id) => getQueueEntry(id))).then((results) => {
+      if (!isMounted) return;
+      setExtraHistoryEntries((prev) => {
+        const next = new Map(prev);
+        results.forEach((entry) => {
+          if (entry) next.set(entry.id, entry);
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [historyEntryIds, entries, extraHistoryEntries]);
+
+  // Auto-archive expired getready entries
+  useEffect(() => {
+    const checkExpired = async () => {
+      const now = Date.now();
+      const expired = entries.find(
+        (e) => e.status === "getready" && isGetReadyExpired(e, now)
+      );
+      if (expired) {
+        try {
+          await updateQueueEntryStatus(expired.id, "archived", {
+            archivedReason: "no_show",
+          });
+        } catch {
+          // ignore
+        }
+      }
+    };
+    checkExpired();
+    const interval = setInterval(checkExpired, 4000);
+    return () => clearInterval(interval);
+  }, [entries]);
 
   // Subscribe to Firestore in real-time
   useEffect(() => {
@@ -168,8 +232,11 @@ export default function CustomerApp() {
     });
   }, [medicines]);
 
-  const historyEntries = entries.filter((entry) => historyEntryIds.includes(entry.id));
-  const currentEntry = entries.find((e) => e.id === currentId) ?? null;
+  const historyEntries = historyEntryIds
+    .map((id) => entries.find((e) => e.id === id) ?? extraHistoryEntries.get(id))
+    .filter((e): e is QueueEntry => !!e);
+  const currentEntry =
+    (currentId ? entries.find((e) => e.id === currentId) ?? extraHistoryEntries.get(currentId) : null) ?? null;
 
   // ─── Navigation ────────────────────────────────────────────────────────────
   function navigate(target: Page, id?: string) {
@@ -626,19 +693,92 @@ export default function CustomerApp() {
               </div>
             ) : (
               <div className="space-y-3">
-                {historyEntries.map((entry) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => navigate("queue", entry.id)}
-                  aria-label={`View queue registration for number ${entry.queueNumber}`}
-                  className="w-full bg-white rounded-2xl p-5 shadow-sm border border-gray-100 text-left hover:border-green-300 hover:shadow-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#166534]"
-                >
-                  <p className="text-xs font-semibold text-gray-500">QUEUE NUMBER</p>
-                  <p className="text-3xl font-bold text-[#166534]">{entry.queueNumber}</p>
-                  <p className="mt-2 text-sm font-semibold text-[#166534]">Tap to view registration</p>
-                </button>
-              ))}
+                {historyEntries.map((entry) => {
+                  const isExpired = isGetReadyExpired(entry, currentTimeMs);
+                  const isArchived = entry.status === "archived" || isExpired;
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => {
+                        if (isArchived) {
+                          setQueueNoticeModal(entry);
+                        } else {
+                          navigate("queue", entry.id);
+                        }
+                      }}
+                      aria-label={`View queue registration for number ${entry.queueNumber}`}
+                      className={`w-full bg-white rounded-2xl p-5 shadow-sm border text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#166534] ${
+                        isArchived
+                          ? "border-amber-300 hover:border-amber-400 hover:shadow-md bg-amber-50/20"
+                          : "border-gray-100 hover:border-green-300 hover:shadow-md"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500">QUEUE NUMBER</p>
+                          <p className={`text-3xl font-black ${isArchived ? "text-amber-800" : "text-[#166534]"}`}>
+                            {entry.queueNumber}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className={`inline-block px-3 py-1 text-xs font-bold rounded-full ${
+                            isArchived
+                              ? "bg-amber-100 text-amber-800 border border-amber-300"
+                              : entry.status === "served"
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                : entry.status === "getready"
+                                  ? "bg-orange-100 text-orange-800 border border-orange-300"
+                                  : entry.status === "processing"
+                                    ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                    : "bg-gray-100 text-gray-700 border border-gray-200"
+                          }`}>
+                            {isArchived
+                              ? "Archived"
+                              : entry.status === "getready"
+                                ? "Get Ready"
+                                : entry.status === "processing"
+                                  ? "Processing"
+                                  : entry.status === "served"
+                                    ? "Served"
+                                    : "Waiting"}
+                          </span>
+                          {entry.status === "getready" && !isArchived && (
+                            <p className="text-xs font-semibold text-orange-600 mt-1">
+                              ⏱ {formatRemainingTime(getReadyRemainingMs(entry, currentTimeMs))} left
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                        <span>{entry.patientName}</span>
+                        <span>
+                          {new Date(entry.timestamp).toLocaleDateString([], {
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          ·{" "}
+                          {new Date(entry.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+
+                      {isArchived ? (
+                        <div className="mt-2 text-sm font-bold text-amber-700 flex items-center gap-1.5">
+                          <AlertIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>Tap to view notice: Get Queue Again</span>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm font-semibold text-[#166534]">
+                          Tap to view registration &rarr;
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -899,20 +1039,48 @@ export default function CustomerApp() {
       )}
 
       {/* ════════════════ QUEUE NUMBER PAGE ════════════════ */}
-      {page === "queue" && currentEntry && (
+      {page === "queue" && currentEntry && (() => {
+        const isCurrentExpired = isGetReadyExpired(currentEntry, currentTimeMs);
+        const isCurrentArchived = currentEntry.status === "archived" || isCurrentExpired;
+        return (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-green-50 to-white">
           {/* Header */}
-          <div className={`shrink-0 text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg ${currentEntry.patientType === "pwd" ? "bg-blue-700" : "bg-[#166534]"}`}>
+          <div className={`shrink-0 text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg ${
+            isCurrentArchived
+              ? "bg-amber-800"
+              : currentEntry.patientType === "pwd"
+                ? "bg-blue-700"
+                : "bg-[#166534]"
+          }`}>
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${currentEntry.patientType === "pwd" ? "bg-blue-300" : "bg-[#4ade80]"}`}>
-                {currentEntry.patientType === "pwd"
-                  ? <AccessibilityIcon className="w-6 h-6 text-blue-700" />
-                  : <PillIcon className="w-6 h-6 text-[#166534]" />}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                isCurrentArchived
+                  ? "bg-amber-300"
+                  : currentEntry.patientType === "pwd"
+                    ? "bg-blue-300"
+                    : "bg-[#4ade80]"
+              }`}>
+                {isCurrentArchived ? (
+                  <AlertIcon className="w-6 h-6 text-amber-800" />
+                ) : currentEntry.patientType === "pwd" ? (
+                  <AccessibilityIcon className="w-6 h-6 text-blue-700" />
+                ) : (
+                  <PillIcon className="w-6 h-6 text-[#166534]" /> )}
               </div>
               <div>
                 <h1 className="text-xl font-bold">Your Queue Number</h1>
-                <p className={`text-sm ${currentEntry.patientType === "pwd" ? "text-blue-200" : "text-green-200"}`}>
-                  {currentEntry.patientType === "pwd" ? "Priority Queue — PWD Patient" : "Please wait for your turn"}
+                <p className={`text-sm ${
+                  isCurrentArchived
+                    ? "text-amber-200"
+                    : currentEntry.patientType === "pwd"
+                      ? "text-blue-200"
+                      : "text-green-200"
+                }`}>
+                  {isCurrentArchived
+                    ? "Notice: Queue Archived (15-min timeout)"
+                    : currentEntry.patientType === "pwd"
+                      ? "Priority Queue — PWD Patient"
+                      : "Please wait for your turn"}
                 </p>
               </div>
             </div>
@@ -920,11 +1088,50 @@ export default function CustomerApp() {
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="px-4 sm:px-6 py-8 max-w-2xl md:max-w-4xl mx-auto">
+            {/* Notice Banner if Archived */}
+            {isCurrentArchived && (
+              <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-5 mb-6 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-700">
+                    <AlertIcon className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <h2 className="text-lg font-bold text-amber-900 mb-1">Notice: Get Queue Again</h2>
+                    <p className="text-sm text-amber-800 mb-4 leading-relaxed">
+                      You did not show up within 15 minutes when your queue was called to &quot;Get Ready&quot;. Your queue number #{currentEntry.queueNumber} has been moved to archive. Please get a queue number again to be served.
+                    </p>
+                    <button
+                      onClick={() => navigate("register")}
+                      className="w-full sm:w-auto px-6 py-3 bg-[#166534] hover:bg-[#14532d] text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow"
+                    >
+                      <RotateCcwIcon className="w-5 h-5" /> Get Queue Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Queue Card */}
-            <div className={`rounded-3xl overflow-hidden shadow-2xl mb-6 ${currentEntry.patientType === "pwd" ? "bg-gradient-to-br from-blue-700 to-blue-900" : "bg-gradient-to-br from-[#166534] to-[#14532d]"}`}>
+            <div className={`rounded-3xl overflow-hidden shadow-2xl mb-6 ${
+              isCurrentArchived
+                ? "bg-gradient-to-br from-amber-800 to-amber-950"
+                : currentEntry.patientType === "pwd"
+                  ? "bg-gradient-to-br from-blue-700 to-blue-900"
+                  : "bg-gradient-to-br from-[#166534] to-[#14532d]"
+            }`}>
               <div className="px-4 sm:px-6 pt-6 flex justify-end">
-                <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold ${currentEntry.patientType === "pwd" ? "bg-blue-300 text-blue-900" : "bg-[#4ade80] text-[#166534]"}`}>
-                  {currentEntry.patientType === "pwd" ? "PWD Priority" : "Regular"}
+                <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold ${
+                  isCurrentArchived
+                    ? "bg-amber-200 text-amber-900"
+                    : currentEntry.patientType === "pwd"
+                      ? "bg-blue-300 text-blue-900"
+                      : "bg-[#4ade80] text-[#166534]"
+                }`}>
+                  {isCurrentArchived
+                    ? "Archived — Missed 15 Mins"
+                    : currentEntry.patientType === "pwd"
+                      ? "PWD Priority"
+                      : "Regular"}
                 </span>
               </div>
               <div className="text-center px-4 sm:px-6 pt-4 pb-6">
@@ -986,52 +1193,82 @@ export default function CustomerApp() {
               </button>
             </div>
 
-            <button onClick={() => navigate("track", currentEntry.id)}
-              className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl flex items-center justify-center mb-4">
-              <ClockIcon className="w-5 h-5 mr-2" /> Track My Queue Status
-            </button>
+              {isCurrentArchived ? (
+                <button onClick={() => navigate("register")}
+                  className="w-full h-14 bg-[#166534] hover:bg-[#14532d] text-white font-bold text-lg rounded-xl flex items-center justify-center gap-2 mb-4 shadow-lg">
+                  <RotateCcwIcon className="w-5 h-5" /> Get Queue Again
+                </button>
+              ) : (
+                <button onClick={() => navigate("track", currentEntry.id)}
+                  className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl flex items-center justify-center mb-4">
+                  <ClockIcon className="w-5 h-5 mr-2" /> Track My Queue Status
+                </button>
+              )}
 
-            {/* What's Next */}
-            <div className={`rounded-xl p-5 mb-6 ${currentEntry.patientType === "pwd" ? "bg-blue-50 border border-blue-200" : "bg-green-50 border border-green-200"}`}>
-              <h3 className={`font-bold mb-3 ${currentEntry.patientType === "pwd" ? "text-blue-900" : "text-[#166534]"}`}>What&apos;s Next?</h3>
-              <ul className="space-y-2 text-sm">
-                {currentEntry.patientType === "pwd" && (
-                  <li className="flex gap-2 text-blue-800"><span className="text-blue-500 font-bold">★</span><span>As a PWD patient, you have priority — you will be called ahead of regular patients.</span></li>
-                )}
-                <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>Please wait in the designated waiting area</span></li>
-                <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>Your queue number will be called when it&apos;s your turn</span></li>
-                <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>Have your prescription ready to present at the counter</span></li>
-                {currentEntry.phone && (
-                  <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>You will receive an SMS notification when your medicine is ready.</span></li>
-                )}
-              </ul>
+              {/* What's Next */}
+              {isCurrentArchived ? (
+                <div className="rounded-xl p-5 mb-6 bg-amber-50 border border-amber-200">
+                  <h3 className="font-bold mb-2 text-amber-900">Queue Expired</h3>
+                  <p className="text-sm text-amber-800 mb-3 leading-relaxed">
+                    The 15-minute window to claim your medicine after being called has passed. To receive your medicine, please tap &quot;Get Queue Again&quot; to generate a new queue ticket.
+                  </p>
+                  <button
+                    onClick={() => navigate("register")}
+                    className="text-sm font-bold text-[#166534] hover:underline flex items-center gap-1"
+                  >
+                    Get Queue Again &rarr;
+                  </button>
+                </div>
+              ) : (
+                <div className={`rounded-xl p-5 mb-6 ${currentEntry.patientType === "pwd" ? "bg-blue-50 border border-blue-200" : "bg-green-50 border border-green-200"}`}>
+                  <h3 className={`font-bold mb-3 ${currentEntry.patientType === "pwd" ? "text-blue-900" : "text-[#166534]"}`}>What&apos;s Next?</h3>
+                  <ul className="space-y-2 text-sm">
+                    {currentEntry.patientType === "pwd" && (
+                      <li className="flex gap-2 text-blue-800"><span className="text-blue-500 font-bold">★</span><span>As a PWD patient, you have priority — you will be called ahead of regular patients.</span></li>
+                    )}
+                    <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>Please wait in the designated waiting area</span></li>
+                    <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>Your queue number will be called when it&apos;s your turn</span></li>
+                    <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>Have your prescription ready to present at the counter</span></li>
+                    {currentEntry.phone && (
+                      <li className={`flex gap-2 ${currentEntry.patientType === "pwd" ? "text-blue-800" : "text-green-800"}`}><span>•</span><span>You will receive an SMS notification when your medicine is ready.</span></li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+            </div>
             </div>
 
-          </div>
-          </div>
-
-          <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3">
-            <div className="max-w-2xl md:max-w-4xl mx-auto">
-              <button onClick={() => navigate("home")}
-                className="h-12 w-full bg-[#166534] hover:bg-[#14532d] text-white font-semibold rounded-xl flex items-center justify-center">
-                <HomeIcon className="w-5 h-5 mr-2" /> Back to Home
-              </button>
+            <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3">
+              <div className="max-w-2xl md:max-w-4xl mx-auto">
+                <button onClick={() => navigate("home")}
+                  className="h-12 w-full bg-[#166534] hover:bg-[#14532d] text-white font-semibold rounded-xl flex items-center justify-center">
+                  <HomeIcon className="w-5 h-5 mr-2" /> Back to Home
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ════════════════ TRACK PAGE ════════════════ */}
-      {page === "track" && currentEntry && (
+      {page === "track" && currentEntry && (() => {
+        const isCurrentExpired = isGetReadyExpired(currentEntry, currentTimeMs);
+        const isCurrentArchived = currentEntry.status === "archived" || isCurrentExpired;
+        return (
         <div className="flex h-full min-h-0 flex-col bg-gradient-to-b from-green-50 to-white">
-          <div className="shrink-0 bg-[#166534] text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg">
+          <div className={`shrink-0 text-white py-4 sm:py-5 px-4 sm:px-6 shadow-lg ${
+            isCurrentArchived ? "bg-amber-800" : "bg-[#166534]"
+          }`}>
             <div className="flex items-center gap-3">
               <button onClick={() => navigate("queue", currentEntry.id)} className="text-white hover:bg-white/20 p-2 rounded-xl" aria-label="Back to your queue number">
                 <ArrowLeftIcon className="w-6 h-6" />
               </button>
               <div>
                 <h1 className="text-2xl font-bold">Track My Queue</h1>
-                <p className="text-green-200 text-sm">Real-time updates</p>
+                <p className="text-green-200 text-sm">
+                  {isCurrentArchived ? "Queue Archived Notice" : "Real-time updates"}
+                </p>
               </div>
             </div>
           </div>
@@ -1040,44 +1277,100 @@ export default function CustomerApp() {
           <div className="px-4 sm:px-6 pt-8 pb-6 max-w-2xl md:max-w-4xl mx-auto">
             <div className="text-center mb-10">
               <p className="text-gray-500 text-sm font-medium">YOUR QUEUE NUMBER</p>
-              <p className="text-[clamp(2rem,10vw,4.5rem)] font-bold text-[#166534] tracking-tighter mt-2 break-words">{currentEntry.queueNumber}</p>
-              {currentEntry.patientType === "pwd" && (
+              <p className={`text-[clamp(2rem,10vw,4.5rem)] font-bold tracking-tighter mt-2 break-words ${
+                isCurrentArchived ? "text-amber-800" : "text-[#166534]"
+              }`}>{currentEntry.queueNumber}</p>
+              {isCurrentArchived ? (
+                <span className="inline-block mt-3 px-5 py-1 bg-amber-100 text-amber-800 text-sm font-semibold rounded-full border border-amber-300">
+                  ARCHIVED — MISSED 15 MINS
+                </span>
+              ) : currentEntry.patientType === "pwd" ? (
                 <span className="inline-block mt-3 px-5 py-1 bg-blue-100 text-blue-700 text-sm font-semibold rounded-full">PWD – PRIORITY</span>
-              )}
+              ) : null}
             </div>
 
             {/* Status Steps */}
             <div className="bg-white rounded-3xl p-4 sm:p-8 mb-8 shadow-sm border border-gray-200">
               <div className="flex justify-between relative mb-10">
                 {STATUS_STEPS.map((step, i) => {
-                  const currentIndex = STATUS_STEPS.findIndex((s) => s.key === currentEntry.status);
+                  const currentIndex = isCurrentArchived
+                    ? 2
+                    : STATUS_STEPS.findIndex((s) => s.key === currentEntry.status);
                   const active = i <= currentIndex;
                   return (
                     <div key={step.key} className="flex flex-col items-center relative z-10">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl transition-all duration-500 ${active ? "bg-[#166534] scale-110 shadow-lg" : "bg-gray-200 text-gray-400"}`}>
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl transition-all duration-500 ${
+                        isCurrentArchived && i === 2
+                          ? "bg-amber-500 text-white scale-110 shadow-lg ring-4 ring-amber-200"
+                          : active
+                            ? "bg-[#166534] text-white scale-110 shadow-lg"
+                            : "bg-gray-200 text-gray-400"
+                      }`}>
                         {i + 1}
                       </div>
-                      <p className={`text-xs font-semibold mt-3 ${active ? "text-[#166534]" : "text-gray-400"}`}>{step.label}</p>
+                      <p className={`text-xs font-semibold mt-3 ${
+                        isCurrentArchived && i === 2
+                          ? "text-amber-700 font-bold"
+                          : active
+                            ? "text-[#166534]"
+                            : "text-gray-400"
+                      }`}>
+                        {step.label}
+                      </p>
                     </div>
                   );
                 })}
                 {/* Progress line */}
                 <div className="absolute top-6 left-0 h-1 bg-gray-200 w-full -z-10">
-                  <div className="h-1 bg-[#166534] transition-all duration-700"
-                    style={{ width: `${(STATUS_STEPS.findIndex((s) => s.key === currentEntry.status) / (STATUS_STEPS.length - 1)) * 100}%` }} />
+                  <div className={`h-1 transition-all duration-700 ${isCurrentArchived ? "bg-amber-400" : "bg-[#166534]"}`}
+                    style={{
+                      width: `${(
+                        (isCurrentArchived
+                          ? 2
+                          : STATUS_STEPS.findIndex((s) => s.key === currentEntry.status)) /
+                        (STATUS_STEPS.length - 1)
+                      ) * 100}%`
+                    }} />
                 </div>
               </div>
 
               {/* Status Message */}
               <div className={`text-center p-4 sm:p-8 rounded-2xl text-lg font-semibold leading-relaxed ${
-                currentEntry.status === "getready" ? "bg-amber-100 text-amber-700 border-2 border-amber-400" :
-                currentEntry.status === "served"   ? "bg-green-100 text-green-700" :
-                currentEntry.status === "processing" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"
+                isCurrentArchived
+                  ? "bg-amber-100 text-amber-900 border-2 border-amber-400"
+                  : currentEntry.status === "getready"
+                    ? "bg-amber-100 text-amber-700 border-2 border-amber-400"
+                    : currentEntry.status === "served"
+                      ? "bg-green-100 text-green-700"
+                      : currentEntry.status === "processing"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-gray-100 text-gray-700"
               }`}>
-                {currentEntry.status === "waiting"    && "Please wait. Your turn is coming soon."}
-                {currentEntry.status === "processing" && "Your medicine is now being prepared by our staff."}
-                {currentEntry.status === "getready"   && "🎉 YOUR MEDICINE IS READY! Please proceed to the counter now."}
-                {currentEntry.status === "served"     && "Thank you! You have been served."}
+                {currentEntry.status === "waiting"    && !isCurrentArchived && "Please wait. Your turn is coming soon."}
+                {currentEntry.status === "processing" && !isCurrentArchived && "Your medicine is now being prepared by our staff."}
+                {currentEntry.status === "getready"   && !isCurrentArchived && (
+                  <div className="space-y-2">
+                    <div>🎉 YOUR MEDICINE IS READY! Please proceed to the counter now.</div>
+                    <div className="text-sm font-normal text-amber-800 bg-amber-200/60 py-1.5 px-3 rounded-lg inline-block">
+                      ⏱ Please claim within 15 minutes. Time remaining: <span className="font-bold text-amber-950">{formatRemainingTime(getReadyRemainingMs(currentEntry, currentTimeMs))}</span>
+                    </div>
+                  </div>
+                )}
+                {currentEntry.status === "served"     && !isCurrentArchived && "Thank you! You have been served."}
+                {isCurrentArchived && (
+                  <div className="space-y-3">
+                    <div className="text-xl font-black text-amber-900">Notice: Get Queue Again</div>
+                    <p className="text-sm font-normal text-amber-800 max-w-md mx-auto">
+                      You did not show up within 15 minutes when your queue was called to &quot;Get Ready&quot;. Your queue was moved to archive. Please get a queue number again.
+                    </p>
+                    <button
+                      onClick={() => navigate("register")}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#166534] hover:bg-[#14532d] text-white text-base font-bold rounded-xl shadow-md"
+                    >
+                      <RotateCcwIcon className="w-5 h-5" /> Get Queue Again
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1117,7 +1410,12 @@ export default function CustomerApp() {
                   className="h-12 bg-[#166534] hover:bg-[#14532d] text-white text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center">
                   <RefreshCwIcon className={`mr-2 w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} /> Refresh Status
                 </button>
-                {currentEntry.status === "getready" && (
+                {isCurrentArchived ? (
+                  <button onClick={() => navigate("register")}
+                    className="h-12 bg-[#166534] hover:bg-[#14532d] text-white text-sm sm:text-base font-bold rounded-xl flex items-center justify-center gap-2 shadow">
+                    <RotateCcwIcon className="mr-2 w-5 h-5" /> Get Queue Again
+                  </button>
+                ) : currentEntry.status === "getready" ? (
                   <button onClick={handleMarkServed} disabled={isMarkingServed}
                     className="h-12 bg-green-600 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 text-white text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center">
                     {isMarkingServed ? (
@@ -1127,7 +1425,7 @@ export default function CustomerApp() {
                     )}
                     {isMarkingServed ? "Updating..." : "I Have Been Served"}
                   </button>
-                )}
+                ) : null}
               </div>
               <button onClick={() => navigate("home")} className="w-full py-2 text-gray-500 hover:text-gray-700 text-sm font-medium">
                 Back to Home
@@ -1135,7 +1433,8 @@ export default function CustomerApp() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Fallback if entry not found */}
       {(page === "queue" || page === "track") && !currentEntry && (
@@ -1144,6 +1443,61 @@ export default function CustomerApp() {
           <button onClick={() => navigate("home")} className="px-4 sm:px-6 py-3 bg-[#166534] text-white rounded-xl font-semibold">
             Back to Home
           </button>
+        </div>
+      )}
+
+      {/* ════════════════ GET QUEUE AGAIN NOTICE MODAL ════════════════ */}
+      {queueNoticeModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50 p-4" onClick={() => setQueueNoticeModal(null)}>
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setQueueNoticeModal(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100"
+              aria-label="Close modal"
+            >
+              <XIcon className="w-5 h-5" />
+            </button>
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-600">
+              <AlertIcon className="w-8 h-8" />
+            </div>
+            <div className="text-center mb-6">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-3 py-1 rounded-full border border-amber-300">
+                Notice
+              </span>
+              <h2 className="text-2xl font-black text-gray-900 mt-3 mb-2">Get Queue Again</h2>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                Queue <span className="font-bold text-gray-900">#{queueNoticeModal.queueNumber}</span> was moved to <span className="font-bold text-amber-900">Archive</span> because you did not show up within 15 minutes while your status was in &quot;Get Ready&quot;.
+              </p>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 text-xs text-amber-800 space-y-1">
+              <p className="font-bold text-amber-900">What should you do?</p>
+              <p>Please get a new queue number to receive your medicine. Our staff will call your medicine when your new number comes up.</p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setQueueNoticeModal(null);
+                  navigate("register");
+                }}
+                className="w-full h-13 bg-[#166534] hover:bg-[#14532d] text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg text-base"
+              >
+                <RotateCcwIcon className="w-5 h-5" />
+                Get Queue Again
+              </button>
+              <button
+                onClick={() => {
+                  const id = queueNoticeModal.id;
+                  setQueueNoticeModal(null);
+                  navigate("queue", id);
+                }}
+                className="w-full h-12 border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-semibold rounded-xl flex items-center justify-center gap-2"
+              >
+                View Queue Details
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1301,6 +1655,13 @@ function CheckCircleIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+  );
+}
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
     </svg>
   );
 }

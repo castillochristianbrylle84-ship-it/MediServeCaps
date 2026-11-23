@@ -18,6 +18,8 @@ import {
   updateQueueEntryStatus,
   deleteQueueEntry,
   getQueueEntriesForDateRange,
+  isGetReadyExpired,
+  getReadyRemainingMs,
   type StockItem,
   type QueueEntry,
 } from "@/lib/firestore";
@@ -26,6 +28,13 @@ import {
 export const dynamic = 'force-dynamic';
 
 const CUSTOMER_APP_URL = process.env.NEXT_PUBLIC_CUSTOMER_URL || "/customer";
+
+function formatRemainingTime(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
 
 async function verifyAdminAccess(user: User): Promise<boolean> {
   const idToken = await user.getIdToken(true);
@@ -51,7 +60,7 @@ async function verifyAdminAccess(user: User): Promise<boolean> {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type AdminPage = "dashboard" | "queue" | "medicines";
-type QueueFilter = "all" | "waiting" | "processing" | "getready" | "served";
+type QueueFilter = "all" | "waiting" | "processing" | "getready" | "served" | "archived";
 type ReportPeriod = "daily" | "weekly" | "monthly" | "yearly" | "custom";
 
 const MEDICINE_CATEGORIES = [
@@ -260,14 +269,64 @@ export default function AdminApp() {
   // Data
   const [medicines, setMedicines] = useState<StockItem[]>([]);
   const [entries, setEntries]     = useState<QueueEntry[]>([]);
+  const [currentTimeMs, setCurrentTimeMs] = useState(Date.now());
+  const [updatingQueueIds, setUpdatingQueueIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const getReadyEntry =
-    entries.find((entry) => entry.status === "getready" && !entry.wasServed) ?? null;
+    entries.find(
+      (entry) =>
+        entry.status === "getready" &&
+        !entry.wasServed &&
+        !isGetReadyExpired(entry, currentTimeMs)
+    ) ?? null;
+
+  // Auto-archive getready entries exceeding 15 minutes
+  useEffect(() => {
+    const checkAndArchive = async () => {
+      const now = Date.now();
+      const expiredEntries = entries.filter(
+        (e) =>
+          e.status === "getready" &&
+          isGetReadyExpired(e, now) &&
+          !updatingQueueIds.has(e.id)
+      );
+
+      for (const entry of expiredEntries) {
+        setUpdatingQueueIds((curr) => new Set(curr).add(entry.id));
+        try {
+          await updateQueueEntryStatus(entry.id, "archived", {
+            archivedReason: "no_show",
+          });
+          showToast(
+            `Queue #${entry.queueNumber} (${entry.patientName}) moved to archive — did not show within 15 mins.`,
+            "warning"
+          );
+        } catch (error) {
+          console.error("Could not auto-archive expired entry:", error);
+        } finally {
+          setUpdatingQueueIds((curr) => {
+            const next = new Set(curr);
+            next.delete(entry.id);
+            return next;
+          });
+        }
+      }
+    };
+
+    checkAndArchive();
+    const interval = setInterval(checkAndArchive, 4000);
+    return () => clearInterval(interval);
+  }, [entries, updatingQueueIds, showToast]);
 
   // Queue state
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [selectedEntry, setSelectedEntry] = useState<QueueEntry | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [updatingQueueIds, setUpdatingQueueIds] = useState<Set<string>>(new Set());
 
   // Medicine modal state
   const [medModalOpen, setMedModalOpen] = useState(false);
@@ -567,7 +626,7 @@ export default function AdminApp() {
         },
         body: JSON.stringify({
           phoneNumber: entry.phone,
-          message: `Hello ${entry.patientName} (Queue ${entry.queueNumber}), YOUR MEDICINE IS READY! Please proceed to the counter.`,
+          message: `Hello ${entry.patientName} (Queue ${entry.queueNumber}), YOUR MEDICINE IS READY! Please proceed to the counter within 15 minutes.`,
         }),
       });
       if (!response.ok) throw new Error(`SMS API returned HTTP ${response.status}.`);
@@ -703,18 +762,39 @@ export default function AdminApp() {
   });
 
   const activeQueueEntries = sortedEntries.filter(
-    (entry) => entry.status !== "served" && entry.status !== "archived"
+    (entry) =>
+      entry.status !== "served" &&
+      entry.status !== "archived" &&
+      !(entry.status === "getready" && isGetReadyExpired(entry, currentTimeMs))
   );
-  const filteredEntries = queueFilter === "all"
-    ? activeQueueEntries
-    : sortedEntries.filter((e) => e.status === queueFilter);
+  const filteredEntries =
+    queueFilter === "all"
+      ? activeQueueEntries
+      : queueFilter === "archived"
+        ? sortedEntries.filter(
+            (e) =>
+              e.status === "archived" ||
+              (e.status === "getready" && isGetReadyExpired(e, currentTimeMs))
+          )
+        : sortedEntries.filter(
+            (e) =>
+              e.status === queueFilter &&
+              !(e.status === "getready" && isGetReadyExpired(e, currentTimeMs))
+          );
 
   const counts = {
     all: activeQueueEntries.length,
     waiting: entries.filter((e) => e.status === "waiting").length,
     processing: entries.filter((e) => e.status === "processing").length,
-    getready: entries.filter((e) => e.status === "getready").length,
+    getready: entries.filter(
+      (e) => e.status === "getready" && !isGetReadyExpired(e, currentTimeMs)
+    ).length,
     served: entries.filter((e) => e.status === "served").length,
+    archived: entries.filter(
+      (e) =>
+        e.status === "archived" ||
+        (e.status === "getready" && isGetReadyExpired(e, currentTimeMs))
+    ).length,
   };
 
   const lowStockMeds = medicines.filter((m) => m.stock > 0 && m.stock <= 50);
@@ -1195,14 +1275,20 @@ export default function AdminApp() {
                 </div>
               </div>
               {getReadyEntry && (
-                <div role="status" className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
-                  Queue #{getReadyEntry.queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.
+                <div role="status" className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    Queue #{getReadyEntry.queueNumber} ({getReadyEntry.patientName}) is currently in &quot;Get Ready&quot;. Mark them as Served before setting another patient to Get Ready.
+                  </div>
+                  <div className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 bg-orange-100 border border-orange-300 rounded-lg font-bold text-orange-900 text-xs">
+                    <ClockIcon className="w-3.5 h-3.5" />
+                    <span>Auto-archives in: {formatRemainingTime(getReadyRemainingMs(getReadyEntry, currentTimeMs))}</span>
+                  </div>
                 </div>
               )}
 
               {/* Filter Tabs */}
               <div className="flex flex-wrap gap-2 mb-6">
-                {(["all","waiting","processing","getready","served"] as QueueFilter[]).map((key) => (
+                {(["all","waiting","processing","getready","served","archived"] as QueueFilter[]).map((key) => (
                   <button key={key} onClick={() => setQueueFilter(key)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
                       queueFilter === key
@@ -1276,8 +1362,16 @@ export default function AdminApp() {
                               </td>
                               <td className="px-6 py-4">
                                 <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold border ${sc.badge}`}>
-                                  <span className={`w-2 h-2 rounded-full ${sc.dot}`} /> {sc.label}
+                                  <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
+                                  {entry.status === "archived" && entry.archivedReason === "no_show"
+                                    ? "Archived (No Show)"
+                                    : sc.label}
                                 </span>
+                                {entry.status === "getready" && (
+                                  <span className="block mt-1 text-xs font-bold text-orange-600">
+                                    ⏱ {formatRemainingTime(getReadyRemainingMs(entry, currentTimeMs))} left
+                                  </span>
+                                )}
                               </td>
                               <td className="px-6 py-4 text-gray-500 text-sm font-medium">
                                 {new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -1312,7 +1406,18 @@ export default function AdminApp() {
                               <span className={`break-words text-2xl font-black ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</span>
                               {isPWD && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">PWD</span>}
                             </div>
-                            <span className={`shrink-0 text-xs px-2.5 py-1 rounded-full font-semibold border ${sc.badge}`}>{sc.label}</span>
+                            <div className="shrink-0 flex flex-col items-end gap-1">
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${sc.badge}`}>
+                                {entry.status === "archived" && entry.archivedReason === "no_show"
+                                  ? "Archived (No Show)"
+                                  : sc.label}
+                              </span>
+                              {entry.status === "getready" && (
+                                <span className="text-xs font-bold text-orange-600">
+                                  ⏱ {formatRemainingTime(getReadyRemainingMs(entry, currentTimeMs))}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <p className="break-words font-semibold text-gray-900">{entry.patientName}</p>
                           <p className="break-words text-gray-500 text-sm mb-3">{entry.address}</p>
@@ -1636,6 +1741,26 @@ export default function AdminApp() {
                       </div>
                     </div>
 
+                    {entry.status === "archived" && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+                        <p className="font-bold mb-1">Status: Archived</p>
+                        <p>
+                          {entry.archivedReason === "no_show"
+                            ? "Patient did not show up within 15 minutes of being set to 'Get Ready'."
+                            : "This queue entry has been moved to archive."}
+                        </p>
+                      </div>
+                    )}
+
+                    {entry.status === "getready" && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm text-orange-800 flex items-center justify-between">
+                        <span className="font-medium">Auto-archives in:</span>
+                        <span className="font-bold text-orange-900">
+                          {formatRemainingTime(getReadyRemainingMs(entry, currentTimeMs))}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="space-y-2.5 pt-1">
                       {entry.status !== "getready" && (
                         <button onClick={() => { handleUpdateStatus(entry.id, "getready"); setModalOpen(false); }}
@@ -1661,6 +1786,30 @@ export default function AdminApp() {
                           </button>
                         )}
                       </div>
+                      {entry.status === "getready" && (
+                        <button
+                          onClick={() => {
+                            handleUpdateStatus(entry.id, "archived");
+                            setModalOpen(false);
+                          }}
+                          disabled={updatingQueueIds.has(entry.id)}
+                          className="w-full h-11 border-2 border-orange-300 text-orange-800 hover:bg-orange-50 font-semibold rounded-xl flex items-center justify-center gap-2"
+                        >
+                          <ArchiveIcon className="w-4 h-4" /> Move to Archive (No Show)
+                        </button>
+                      )}
+                      {entry.status === "archived" && (
+                        <button
+                          onClick={() => {
+                            handleUpdateStatus(entry.id, "waiting");
+                            setModalOpen(false);
+                          }}
+                          disabled={updatingQueueIds.has(entry.id)}
+                          className="w-full h-11 border-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-semibold rounded-xl flex items-center justify-center gap-2"
+                        >
+                          Restore to Waiting
+                        </button>
+                      )}
                       <button onClick={() => handleDeleteEntry(entry.id, entry.queueNumber)}
                         className="w-full h-11 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 flex items-center justify-center gap-2">
                         <TrashIcon className="w-4 h-4" /> Remove from Queue
@@ -1879,4 +2028,18 @@ function SpinnerIcon({ className }: { className?: string }) {
 }
 function BellIcon({ className }: { className?: string }) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>;
+}
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+  );
+}
+function ArchiveIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+    </svg>
+  );
 }
