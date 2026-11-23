@@ -12,11 +12,6 @@ import {
   type StockItem,
   type QueueEntry,
 } from "@/lib/firestore";
-import {
-  isQueueRegistrationOpen,
-  QUEUE_REGISTRATION_HOURS_MESSAGE,
-} from "@/lib/queue-hours";
-
 //  Types 
 type Page = "home" | "register" | "queue" | "track" | "history";
 
@@ -128,9 +123,6 @@ export default function CustomerApp() {
   const [entries, setEntries]         = useState<QueueEntry[]>([]);
   const [currentId, setCurrentId]     = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [queueRegistrationOpen, setQueueRegistrationOpen] = useState(
-    () => isQueueRegistrationOpen()
-  );
   const [otpCode, setOtpCode] = useState("");
   const [otpSentFor, setOtpSentFor] = useState<string | null>(null);
   const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
@@ -157,14 +149,6 @@ export default function CustomerApp() {
     const unsubStock  = subscribeStockItems(setMedicines);
     const unsubQueue  = subscribeQueueEntries(setEntries);
     return () => { unsubStock(); unsubQueue(); };
-  }, []);
-
-  useEffect(() => {
-    const updateQueueRegistrationHours = () =>
-      setQueueRegistrationOpen(isQueueRegistrationOpen());
-    updateQueueRegistrationHours();
-    const intervalId = window.setInterval(updateQueueRegistrationHours, 30_000);
-    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -203,12 +187,6 @@ export default function CustomerApp() {
   // ─── Registration Submit ───────────────────────────────────────────────────
   async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement, SubmitEvent>) {
   e.preventDefault();
-
-  if (!isQueueRegistrationOpen()) {
-    setQueueRegistrationOpen(false);
-    showToast(QUEUE_REGISTRATION_HOURS_MESSAGE, "error");
-    return;
-  }
 
   if (!form.patientName.trim()) { showToast("Please enter your full name", "error"); return; }
   if (!form.address.trim())     { showToast("Please enter your address", "error"); return; }
@@ -608,19 +586,14 @@ export default function CustomerApp() {
           </div>
 
           <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3 shadow-lg">
-              {!queueRegistrationOpen && (
-                <p role="status" className="mx-auto mb-1 max-w-2xl text-center text-sm font-medium text-amber-800">
-                  {QUEUE_REGISTRATION_HOURS_MESSAGE}
-                </p>
-              )}
               <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto grid grid-cols-[auto_1fr] gap-3">
                 <button onClick={() => navigate("history")}
                   className="h-12 px-3 sm:px-5 border-2 border-[#166534] text-[#166534] hover:bg-green-50 text-sm sm:text-base font-semibold rounded-xl flex items-center justify-center gap-2">
                   <ClockIcon className="w-5 h-5" />
                   History
                 </button>
-                <button onClick={() => navigate("register")} disabled={!queueRegistrationOpen}
-                  className="h-12 px-2 bg-[#166534] hover:bg-[#14532d] disabled:cursor-not-allowed disabled:opacity-50 text-base sm:text-lg font-semibold rounded-xl shadow-lg flex items-center justify-center gap-2">
+                <button onClick={() => navigate("register")}
+                  className="h-12 px-2 bg-[#166534] hover:bg-[#14532d] text-white text-base sm:text-lg font-semibold rounded-xl shadow-lg flex items-center justify-center gap-2">
                   Get My Queue Number
                   <ChevronRightIcon className="w-6 h-6" />
                 </button>
@@ -915,15 +888,10 @@ export default function CustomerApp() {
 
           <div className="customer-app-footer shrink-0 border-t border-gray-200 bg-white px-4 py-2 sm:px-6 sm:py-3 shadow-lg">
             <div className="max-w-2xl md:max-w-3xl mx-auto">
-              {!queueRegistrationOpen && (
-                <p role="status" className="mb-1 text-center text-sm font-medium text-amber-800">
-                  {QUEUE_REGISTRATION_HOURS_MESSAGE}
-                </p>
-              )}
-              <button type="submit" form="queue-registration-form" disabled={isSubmitting || verifiedPhone !== form.phone || !queueRegistrationOpen}
+              <button type="submit" form="queue-registration-form" disabled={isSubmitting || verifiedPhone !== form.phone}
                 className="w-full h-12 sm:h-14 bg-[#166534] hover:bg-[#14532d] disabled:cursor-not-allowed disabled:opacity-60 text-white text-base sm:text-lg font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
                 <PillIcon className="w-6 h-6" />
-                {isSubmitting ? "Generating..." : queueRegistrationOpen ? "Get My Queue Number" : "Queue Registration Closed"}
+                {isSubmitting ? "Generating..." : "Get My Queue Number"}
               </button>
             </div>
           </div>
