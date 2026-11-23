@@ -332,6 +332,14 @@ export default function AdminApp() {
   const [selectedEntry, setSelectedEntry] = useState<QueueEntry | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
+  useEffect(() => {
+    if (!modalOpen || !selectedEntry) return;
+    const liveEntry = entries.find((entry) => entry.id === selectedEntry.id);
+    if (!liveEntry || liveEntry.status === "archived") {
+      setModalOpen(false);
+    }
+  }, [entries, modalOpen, selectedEntry]);
+
   // Medicine modal state
   const [medModalOpen, setMedModalOpen] = useState(false);
   const [editingMed, setEditingMed]     = useState<StockItem | null>(null);
@@ -753,6 +761,8 @@ export default function AdminApp() {
   }
 
   function openQueueEntry(entry: QueueEntry) {
+    if (entry.status === "archived") return;
+    if (entry.status === "served") return;
     setSelectedEntry(entry);
     setModalOpen(true);
   }
@@ -1329,11 +1339,12 @@ export default function AdminApp() {
                           const isPWD = entry.patientType === "pwd";
                           return (
                             <tr key={entry.id}
-                              role="button"
-                              tabIndex={0}
-                              className={`hover:bg-emerald-50/40 cursor-pointer focus:outline-none focus:bg-emerald-50 ${isPWD ? "bg-blue-50/20" : ""}`}
+                              role={entry.status === "served" || entry.status === "archived" ? undefined : "button"}
+                              tabIndex={entry.status === "served" || entry.status === "archived" ? undefined : 0}
+                              className={`${entry.status === "served" || entry.status === "archived" ? "cursor-default" : "hover:bg-emerald-50/40 cursor-pointer focus:outline-none focus:bg-emerald-50"} ${isPWD ? "bg-blue-50/20" : ""}`}
                               onClick={() => openQueueEntry(entry)}
                               onKeyDown={(event) => {
+                                if (entry.status === "served" || entry.status === "archived") return;
                                 if (event.key === "Enter" || event.key === " ") {
                                   event.preventDefault();
                                   openQueueEntry(entry);
@@ -1392,11 +1403,12 @@ export default function AdminApp() {
                       const isPWD = entry.patientType === "pwd";
                       return (
                         <div key={entry.id}
-                          role="button"
-                          tabIndex={0}
-                          className="bg-white border border-emerald-100 rounded-2xl p-4 sm:p-5 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          role={entry.status === "served" || entry.status === "archived" ? undefined : "button"}
+                          tabIndex={entry.status === "served" || entry.status === "archived" ? undefined : 0}
+                          className={`bg-white border border-emerald-100 rounded-2xl p-4 sm:p-5 shadow-sm ${entry.status === "served" || entry.status === "archived" ? "cursor-default" : "cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"}`}
                           onClick={() => openQueueEntry(entry)}
                           onKeyDown={(event) => {
+                            if (entry.status === "served" || entry.status === "archived") return;
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
                               openQueueEntry(entry);
