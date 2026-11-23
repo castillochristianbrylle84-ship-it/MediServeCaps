@@ -599,7 +599,7 @@ export default function CustomerApp() {
                   <SearchIcon className="w-4 h-4" /> Search
                 </button>
               </form>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid max-h-[55vh] sm:max-h-96 gap-3 overflow-y-auto pr-1 overscroll-contain md:grid-cols-2">
                 {searchedAvailableMeds.length === 0 ? (
                   <p className="text-gray-500 text-center py-4">{customerMeds.length === 0 ? "No medicines in inventory" : "No medicines match your search"}</p>
                 ) : searchedAvailableMeds.map((med, i) => (
@@ -930,7 +930,7 @@ export default function CustomerApp() {
                     <SearchIcon className="w-4 h-4" /> Search
                   </button>
                 </div>
-                <div className="grid gap-3 pr-1">
+                <div className="grid max-h-[55vh] sm:max-h-96 gap-3 overflow-y-auto pr-1 overscroll-contain">
                   {searchedNeededMeds.length === 0 ? (
                     <p className="text-gray-500 text-center py-4">{customerMeds.length === 0 ? "No medicines in inventory" : "No medicines match your search"}</p>
                   ) : searchedNeededMeds.map((med) => {
