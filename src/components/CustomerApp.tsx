@@ -461,7 +461,7 @@ export default function CustomerApp() {
     context.textAlign = "center";
     context.font = "bold 34px sans-serif";
     context.fillText("MediServe - City Health Pharmacy", canvas.width / 2, 70);
-    context.font = "bold 150px sans-serif";
+    context.font = currentEntry.queueNumber.length > 4 ? "bold 110px sans-serif" : "bold 150px sans-serif";
     context.fillText(currentEntry.queueNumber, canvas.width / 2, 245);
 
     context.textAlign = "left";
@@ -1098,7 +1098,7 @@ export default function CustomerApp() {
                   <div className="flex-1">
                     <h2 className="text-lg font-bold text-amber-900 mb-1">Notice: Get Queue Again</h2>
                     <p className="text-sm text-amber-800 mb-4 leading-relaxed">
-                      You did not show up within 15 minutes when your queue was called to &quot;Get Ready&quot;. Your queue number #{currentEntry.queueNumber} has been moved to archive. Please get a queue number again to be served.
+                      You did not show up within 15 minutes when your queue was called to &quot;Get Ready&quot;. Your queue number {currentEntry.queueNumber.startsWith("PWD") || currentEntry.queueNumber.startsWith("REG") ? currentEntry.queueNumber : `#${currentEntry.queueNumber}`} has been moved to archive. Please get a queue number again to be served.
                     </p>
                     <button
                       onClick={() => navigate("register")}
@@ -1466,7 +1466,7 @@ export default function CustomerApp() {
               </span>
               <h2 className="text-2xl font-black text-gray-900 mt-3 mb-2">Get Queue Again</h2>
               <p className="text-gray-600 text-sm leading-relaxed">
-                Queue <span className="font-bold text-gray-900">#{queueNoticeModal.queueNumber}</span> was moved to <span className="font-bold text-amber-900">Archive</span> because you did not show up within 15 minutes while your status was in &quot;Get Ready&quot;.
+                Queue <span className="font-bold text-gray-900">{queueNoticeModal.queueNumber.startsWith("PWD") || queueNoticeModal.queueNumber.startsWith("REG") ? queueNoticeModal.queueNumber : `#${queueNoticeModal.queueNumber}`}</span> was moved to <span className="font-bold text-amber-900">Archive</span> because you did not show up within 15 minutes while your status was in &quot;Get Ready&quot;.
               </p>
             </div>
 

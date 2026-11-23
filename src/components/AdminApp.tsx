@@ -29,6 +29,10 @@ export const dynamic = 'force-dynamic';
 
 const CUSTOMER_APP_URL = process.env.NEXT_PUBLIC_CUSTOMER_URL || "/customer";
 
+function formatQueueDisplay(num: string): string {
+  return num.startsWith("PWD") || num.startsWith("REG") ? num : `#${num}`;
+}
+
 function formatRemainingTime(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(totalSec / 60);
@@ -303,7 +307,7 @@ export default function AdminApp() {
             archivedReason: "no_show",
           });
           showToast(
-            `Queue #${entry.queueNumber} (${entry.patientName}) moved to archive — did not show within 15 mins.`,
+            `Queue ${formatQueueDisplay(entry.queueNumber)} (${entry.patientName}) moved to archive — did not show within 15 mins.`,
             "warning"
           );
         } catch (error) {
@@ -575,7 +579,7 @@ export default function AdminApp() {
     if (updatingQueueIds.has(id)) return;
     if (status === "getready" && getReadyEntry && getReadyEntry.id !== id) {
       showToast(
-        `Queue #${getReadyEntry.queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`,
+        `Queue ${formatQueueDisplay(getReadyEntry.queueNumber)} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`,
         "error"
       );
       return;
@@ -1277,7 +1281,7 @@ export default function AdminApp() {
               {getReadyEntry && (
                 <div role="status" className="mb-6 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    Queue #{getReadyEntry.queueNumber} ({getReadyEntry.patientName}) is currently in &quot;Get Ready&quot;. Mark them as Served before setting another patient to Get Ready.
+                    Queue {formatQueueDisplay(getReadyEntry.queueNumber)} ({getReadyEntry.patientName}) is currently in &quot;Get Ready&quot;. Mark them as Served before setting another patient to Get Ready.
                   </div>
                   <div className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 bg-orange-100 border border-orange-300 rounded-lg font-bold text-orange-900 text-xs">
                     <ClockIcon className="w-3.5 h-3.5" />
@@ -1692,7 +1696,7 @@ export default function AdminApp() {
                 const entry = selectedEntry;
                 const getReadyLockMessage =
                   getReadyEntry && getReadyEntry.id !== entry.id
-                    ? `Queue #${getReadyEntry.queueNumber} is currently in "Get Ready". Mark them as Served first.`
+                    ? `Queue ${formatQueueDisplay(getReadyEntry.queueNumber)} is currently in "Get Ready". Mark them as Served first.`
                     : undefined;
                 const sc = STATUS_CONFIG[entry.status];
                 const isPWD = entry.patientType === "pwd";

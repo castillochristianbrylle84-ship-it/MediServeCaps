@@ -287,8 +287,8 @@ export const notifyQueueAdvance = onDocumentUpdated(
       .sort(compareQueueOrder);
 
     const ongoingEntry = activeEntries[0];
-    const ongoingQueueNumber = Number(ongoingEntry?.queueNumber);
-    if (!ongoingEntry || !Number.isInteger(ongoingQueueNumber)) {
+    const ongoingQueueNumber = String(ongoingEntry?.queueNumber ?? "").trim();
+    if (!ongoingEntry || !ongoingQueueNumber) {
       logger.info("No valid ongoing queue number remains after service completion", {
         ticketId: event.params.ticketId,
         queueDate,
@@ -296,18 +296,16 @@ export const notifyQueueAdvance = onDocumentUpdated(
       return;
     }
 
-    const recipients = activeEntries.filter((entry) => {
-      const queueNumber = Number(entry.queueNumber);
-      return (
-        entry.id !== ongoingEntry.id &&
-        ["waiting", "processing", "getready"].includes(entry.status) &&
-        Number.isInteger(queueNumber) &&
-        queueNumber > ongoingQueueNumber &&
-        queueNumber <= ongoingQueueNumber + 5 &&
-        typeof entry.phone === "string" &&
-        normalizePhilippinePhoneNumber(entry.phone) !== null
-      );
-    });
+    const recipients = activeEntries
+      .filter((entry) => {
+        return (
+          entry.id !== ongoingEntry.id &&
+          ["waiting", "processing", "getready"].includes(entry.status) &&
+          typeof entry.phone === "string" &&
+          normalizePhilippinePhoneNumber(entry.phone) !== null
+        );
+      })
+      .slice(0, 5);
 
     const claimedMessages = [];
     for (const recipient of recipients) {

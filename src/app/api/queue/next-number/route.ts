@@ -82,9 +82,12 @@ export async function POST(request: Request) {
       return next;
     });
 
+    const prefix = patientType === "pwd" ? "PWD" : "REG";
+    const formattedQueueNumber = `${prefix}${String(nextNumber).padStart(3, "0")}`;
+
     return Response.json({
       queueDate,
-      queueNumber: String(nextNumber),
+      queueNumber: formattedQueueNumber,
     });
   } catch (error) {
     console.error("Could not allocate a queue number:", error);
