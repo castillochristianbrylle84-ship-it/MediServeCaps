@@ -71,6 +71,17 @@ function compareQueueOrder(left, right) {
   return getTimestampValue(left.timestamp) - getTimestampValue(right.timestamp);
 }
 
+/**
+ * Extracts the prefix ("PWD"/"REG") and sequence number from a formatted
+ * queue number string like "PWD001" or "REG010".
+ * Returns null for legacy bare-number strings.
+ */
+function parseQueueNumber(queueNumber) {
+  const match = String(queueNumber ?? "").match(/^(PWD|REG)(\d+)$/i);
+  if (!match) return null;
+  return { prefix: match[1].toUpperCase(), seq: parseInt(match[2], 10) };
+}
+
 async function findPreviousDayTickets(queueDate, start, end) {
   const [dateTagged, legacy] = await Promise.all([
     db.collection("customers").where("queueDate", "==", queueDate).get(),
@@ -296,16 +307,24 @@ export const notifyQueueAdvance = onDocumentUpdated(
       return;
     }
 
-    const recipients = activeEntries
-      .filter((entry) => {
-        return (
-          entry.id !== ongoingEntry.id &&
-          ["waiting", "processing", "getready"].includes(entry.status) &&
-          typeof entry.phone === "string" &&
-          normalizePhilippinePhoneNumber(entry.phone) !== null
-        );
-      })
-      .slice(0, 5);
+    // Parse the ongoing queue number to extract prefix + sequence (e.g. "REG006" → { prefix: "REG", seq: 6 })
+    const ongoingParsed = parseQueueNumber(ongoingQueueNumber);
+
+    const recipients = activeEntries.filter((entry) => {
+      if (entry.id === ongoingEntry.id) return false;
+      if (!["waiting", "processing", "getready"].includes(entry.status)) return false;
+      if (typeof entry.phone !== "string" || !normalizePhilippinePhoneNumber(entry.phone)) return false;
+
+      // Only notify the patient exactly 5 numbers ahead (same prefix)
+      if (ongoingParsed) {
+        const entryParsed = parseQueueNumber(entry.queueNumber);
+        if (!entryParsed || entryParsed.prefix !== ongoingParsed.prefix) return false;
+        return entryParsed.seq - ongoingParsed.seq === 5;
+      }
+
+      // Fallback for legacy bare-number entries
+      return false;
+    });
 
     const claimedMessages = [];
     for (const recipient of recipients) {
@@ -319,7 +338,7 @@ export const notifyQueueAdvance = onDocumentUpdated(
       claimedMessages.push({
         notificationId: `${queueDate}_${ongoingQueueNumber}_${recipient.id}`,
         phoneNumber: recipient.phone,
-        message: `Queue number ${ongoingQueueNumber} ongoing`,
+        message: `Queue number ${ongoingQueueNumber} is now in processing. Please prepare — your turn is approaching.`,
       });
     }
     if (claimedMessages.length === 0) return;
