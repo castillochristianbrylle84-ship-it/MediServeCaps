@@ -165,6 +165,7 @@ function getStockBatchInfo(
 ): {
   role: "old" | "new";
   hasMultipleBatches: boolean;
+  hasActiveOldStock: boolean;
 } {
   const key = normalizeMedName(med.name);
   const sameNameMeds = allMedicines.filter(
@@ -172,14 +173,17 @@ function getStockBatchInfo(
   );
   if (sameNameMeds.length > 1) {
     const isOldestActive = sameNameMeds[0]?.id === med.id;
+    const oldStockQty = sameNameMeds[0]?.stock ?? 0;
     return {
       role: isOldestActive ? "old" : "new",
       hasMultipleBatches: true,
+      hasActiveOldStock: !isOldestActive && oldStockQty > 0,
     };
   }
   return {
     role: med.isNewStock ? "new" : "old",
     hasMultipleBatches: false,
+    hasActiveOldStock: false,
   };
 }
 
@@ -751,7 +755,31 @@ export default function AdminApp() {
         isStockItemAvailable(b),
       );
 
-      // If Old Stock is at 0 quantity and no New Stock is available yet, automatically make the first New Stock with quantity > 0 available
+      // 1. While Old Stock still has quantity > 0, ensure any New Stock is automatically Unavailable
+      if (anyOldStockHasQuantity) {
+        newBatches.forEach((nb) => {
+          if (
+            (isStockItemAvailable(nb) || nb.waitingForOldStock !== true) &&
+            !activatingNewStockIds.current.has(nb.id)
+          ) {
+            activatingNewStockIds.current.add(nb.id);
+            setStockItemAvailability(nb.id, false, {
+              waitingForOldStock: true,
+            })
+              .catch((error) => {
+                console.error(
+                  "Could not set new stock to standby unavailable:",
+                  error,
+                );
+              })
+              .finally(() => {
+                activatingNewStockIds.current.delete(nb.id);
+              });
+          }
+        });
+      }
+
+      // 2. When Old Stock is at 0 quantity and no New Stock is available yet, automatically make the first New Stock with quantity > 0 available
       if (!anyOldStockHasQuantity && !anyNewStockAvailable) {
         const candidateNewBatch = newBatches.find(
           (b) =>
@@ -1079,18 +1107,17 @@ export default function AdminApp() {
       return;
     }
     const batchInfo = getStockBatchInfo(med, medicines);
-    const hasActiveOldStock =
-      batchInfo.role === "new" &&
-      medicines.some(
-        (other) =>
-          other.id !== med.id &&
-          normalizeMedName(other.name) === normalizeMedName(med.name) &&
-          getStockBatchInfo(other, medicines).role === "old" &&
-          other.stock > 0,
+    if (!currentlyAvailable && batchInfo.hasActiveOldStock) {
+      showToast(
+        "New stock will automatically become available when the old stock reaches 0 quantity",
+        "warning",
       );
+      return;
+    }
     try {
       await setStockItemAvailability(med.id, !currentlyAvailable, {
-        waitingForOldStock: currentlyAvailable && hasActiveOldStock,
+        waitingForOldStock:
+          currentlyAvailable && batchInfo.hasActiveOldStock,
       });
       showToast(
         currentlyAvailable

@@ -97,18 +97,41 @@ function isLowStock(stock: number): boolean {
   return stock <= LOW_STOCK_THRESHOLD;
 }
 
+function getActiveBatchForCustomer(
+  group: StockItem[],
+): StockItem | undefined {
+  if (group.length === 0) return undefined;
+  if (group.length === 1) return group[0];
+
+  // group is ordered oldest-first (Old Stock first, New Stock after).
+  // While the Old Stock still has quantity > 0, always return the Old Stock
+  // so New Stock never appears in Medicine Availability until Old Stock hits 0.
+  const firstBatchWithStock = group.find((item) => item.stock > 0);
+  if (firstBatchWithStock) {
+    // If all older batches before this one have hit 0 quantity and this batch was waiting for old stock,
+    // treat it as available immediately even before the admin client finishes flipping waitingForOldStock.
+    const idx = group.indexOf(firstBatchWithStock);
+    if (idx > 0 && firstBatchWithStock.waitingForOldStock) {
+      return {
+        ...firstBatchWithStock,
+        available: true,
+        manualUnavailable: false,
+        waitingForOldStock: false,
+      };
+    }
+    return firstBatchWithStock;
+  }
+
+  return group[group.length - 1];
+}
+
 function findPreferredMedicine(
   items: StockItem[],
   name: string,
 ): StockItem | undefined {
   const key = name.trim().toLowerCase();
   const matches = items.filter((item) => item.name.trim().toLowerCase() === key);
-  if (matches.length === 0) return undefined;
-  return (
-    matches.find((item) => isStockItemAvailable(item)) ??
-    matches.find((item) => item.stock > 0) ??
-    matches[0]
-  );
+  return getActiveBatchForCustomer(matches);
 }
 
 function getCustomerDisplayMedicines(items: StockItem[]): StockItem[] {
@@ -121,11 +144,8 @@ function getCustomerDisplayMedicines(items: StockItem[]): StockItem[] {
   });
   const result: StockItem[] = [];
   grouped.forEach((group) => {
-    const preferred =
-      group.find((item) => isStockItemAvailable(item)) ??
-      group.find((item) => item.stock > 0) ??
-      group[0];
-    if (preferred) result.push(preferred);
+    const activeBatch = getActiveBatchForCustomer(group);
+    if (activeBatch) result.push(activeBatch);
   });
   return result;
 }
