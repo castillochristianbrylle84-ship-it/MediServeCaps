@@ -252,7 +252,9 @@ export async function addStockItem(
     ? true
     : item.manualUnavailable === true;
   const available =
-    cleanStock > 0 && !manualUnavailable && (autoUnavailable ? false : item.available);
+    cleanStock > 0 &&
+    !manualUnavailable &&
+    (autoUnavailable ? false : item.available);
 
   const ref = await addDoc(collection(db, "stock"), {
     ...item,
@@ -324,14 +326,14 @@ export async function updateStockItem(
     const sameMedItems = sortStockItemsOldestFirst(
       allSnap.docs
         .map((d) => toStockItem(d.id, d.data()))
-        .filter((item) => normalizeMedicineName(item.name) === normalizedName)
+        .filter((item) => normalizeMedicineName(item.name) === normalizedName),
     );
     const hasAnotherAvailable = sameMedItems.some(
-      (item) => item.id !== id && isStockItemAvailable(item)
+      (item) => item.id !== id && isStockItemAvailable(item),
     );
     if (!hasAnotherAvailable) {
       const nextBatchWithStock = sameMedItems.find(
-        (item) => item.id !== id && item.stock > 0
+        (item) => item.id !== id && item.stock > 0,
       );
       if (nextBatchWithStock) {
         await updateDoc(doc(db, "stock", nextBatchWithStock.id), {
@@ -389,7 +391,7 @@ export async function deductStock(
   const matchingDocs = sortStockItemsOldestFirst(
     snap.docs
       .map((d) => toStockItem(d.id, d.data()))
-      .filter((d) => normalizeMedicineName(d.name) === normalizedTarget)
+      .filter((d) => normalizeMedicineName(d.name) === normalizedTarget),
   );
 
   let remainingToDeduct = qty;
@@ -422,10 +424,10 @@ export async function deductStock(
     const refreshedItems = sortStockItemsOldestFirst(
       refreshedSnap.docs
         .map((d) => toStockItem(d.id, d.data()))
-        .filter((d) => normalizeMedicineName(d.name) === normalizedTarget)
+        .filter((d) => normalizeMedicineName(d.name) === normalizedTarget),
     );
     const anyAvailable = refreshedItems.some((item) =>
-      isStockItemAvailable(item)
+      isStockItemAvailable(item),
     );
     if (!anyAvailable) {
       const nextWithStock = refreshedItems.find((item) => item.stock > 0);
@@ -1012,7 +1014,7 @@ export async function updateQueueEntryStatus(
       // If an older batch hit 0 during this serve transaction, automatically make the next batch with stock > 0 available
       if (oldBatchDepleted && existingSnapshots.length > 1) {
         const nextIdx = existingSnapshots.findIndex(
-          (_, idx) => finalStocks[idx] > 0
+          (_, idx) => finalStocks[idx] > 0,
         );
         if (nextIdx !== -1) {
           const nextBatch = existingSnapshots[nextIdx];

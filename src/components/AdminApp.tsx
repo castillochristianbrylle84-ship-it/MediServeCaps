@@ -21,9 +21,77 @@ import {
   getQueueEntriesForDateRange,
   isGetReadyExpired,
   getReadyRemainingMs,
-  type StockItem,
+  type StockItem as BaseStockItem,
   type QueueEntry,
 } from "@/lib/firestore";
+
+interface PendingStockBatch {
+  batchId: string;
+  name: string;
+  type: string;
+  stock: number;
+  genericName?: string;
+  dosageStrength?: string;
+  dosageForm?: string;
+  unitOfMeasurement?: string;
+  batchNumber?: string;
+  minimumStock?: number;
+  storageLocation?: string;
+  manufacturingDate?: string;
+  expirationDate?: string;
+  receivedDate?: string;
+  createdAtMs?: number;
+}
+
+type StockItem = BaseStockItem & {
+  pendingNewStocks?: PendingStockBatch[];
+  parentStockId?: string;
+  pendingBatchId?: string;
+};
+
+function expandStockItemsForAdmin(items: StockItem[]): StockItem[] {
+  const expanded: StockItem[] = [];
+  for (const item of items) {
+    const pendingList = Array.isArray(item.pendingNewStocks)
+      ? item.pendingNewStocks
+      : [];
+    expanded.push(item);
+    for (const pending of pendingList) {
+      expanded.push({
+        id: `${item.id}::pending::${pending.batchId}`,
+        parentStockId: item.id,
+        pendingBatchId: pending.batchId,
+        name: pending.name || item.name,
+        type: pending.type || item.type,
+        stock: pending.stock,
+        available: false,
+        manualUnavailable: true,
+        isNewStock: true,
+        waitingForOldStock: true,
+        genericName: pending.genericName ?? item.genericName,
+        dosageStrength: pending.dosageStrength ?? item.dosageStrength,
+        dosageForm: pending.dosageForm ?? item.dosageForm,
+        unitOfMeasurement: pending.unitOfMeasurement ?? item.unitOfMeasurement,
+        batchNumber: pending.batchNumber ?? "",
+        minimumStock: pending.minimumStock ?? item.minimumStock,
+        storageLocation: pending.storageLocation ?? item.storageLocation,
+        manufacturingDate: pending.manufacturingDate ?? "",
+        expirationDate: pending.expirationDate ?? "",
+        receivedDate: pending.receivedDate ?? "",
+      });
+    }
+  }
+  return expanded;
+}
+
+async function promotePendingStockIfNeeded(med: StockItem): Promise<boolean> {
+  const pending = Array.isArray(med.pendingNewStocks)
+    ? med.pendingNewStocks
+    : [];
+  if (med.stock > 0 || pending.length === 0) return false;
+  await updateStockItem(med.id, { stock: 0 });
+  return true;
+}
 
 // Add this at the top of your app/admin/page.tsx file
 export const dynamic = "force-dynamic";
@@ -167,6 +235,15 @@ function getStockBatchInfo(
   hasMultipleBatches: boolean;
   hasActiveOldStock: boolean;
 } {
+  if (med.pendingBatchId) {
+    const parent = allMedicines.find((item) => item.id === med.parentStockId);
+    const parentQty = parent?.stock ?? 0;
+    return {
+      role: "new",
+      hasMultipleBatches: true,
+      hasActiveOldStock: parentQty > 0,
+    };
+  }
   const key = normalizeMedName(med.name);
   const sameNameMeds = allMedicines.filter(
     (item) => normalizeMedName(item.name) === key,
@@ -723,87 +800,33 @@ export default function AdminApp() {
   }, [medicines, showToast]);
 
   // Automatically manage Old Stock -> New Stock availability transition:
-  // 1. When a New Stock exists alongside an Old Stock that still has quantity > 0, New Stock stays Unavailable.
-  // 2. As soon as Old Stock hits 0 quantity, New Stock automatically becomes Available.
+  // 1. When a medicine document reaches 0 quantity and has pendingNewStocks, promote the next pending New Stock immediately.
+  // 2. Also handle any legacy separate batch documents.
   useEffect(() => {
     if (!medicines.length) return;
 
-    const groups = new Map<string, StockItem[]>();
     medicines.forEach((med) => {
-      const key = normalizeMedName(med.name);
-      const list = groups.get(key) ?? [];
-      list.push(med);
-      groups.set(key, list);
-    });
-
-    groups.forEach((group) => {
-      if (group.length <= 1) return;
-
-      const oldBatches = group.filter(
-        (item) => getStockBatchInfo(item, medicines).role === "old",
-      );
-      const newBatches = group.filter(
-        (item) => getStockBatchInfo(item, medicines).role === "new",
-      );
-
-      const anyOldStockHasQuantity = oldBatches.some((b) => b.stock > 0);
-      const oldStockJustHitZero = oldBatches.some((b) => {
-        const prev = prevStockQuantities.current.get(b.id);
-        return prev !== undefined && prev > 0 && b.stock === 0;
-      });
-      const anyNewStockAvailable = newBatches.some((b) =>
-        isStockItemAvailable(b),
-      );
-
-      // 1. While Old Stock still has quantity > 0, ensure any New Stock is automatically Unavailable
-      if (anyOldStockHasQuantity) {
-        newBatches.forEach((nb) => {
-          if (
-            (isStockItemAvailable(nb) || nb.waitingForOldStock !== true) &&
-            !activatingNewStockIds.current.has(nb.id)
-          ) {
-            activatingNewStockIds.current.add(nb.id);
-            setStockItemAvailability(nb.id, false, {
-              waitingForOldStock: true,
-            })
-              .catch((error) => {
-                console.error(
-                  "Could not set new stock to standby unavailable:",
-                  error,
-                );
-              })
-              .finally(() => {
-                activatingNewStockIds.current.delete(nb.id);
-              });
-          }
-        });
-      }
-
-      // 2. When Old Stock is at 0 quantity and no New Stock is available yet, automatically make the first New Stock with quantity > 0 available
-      if (!anyOldStockHasQuantity && !anyNewStockAvailable) {
-        const candidateNewBatch = newBatches.find(
-          (b) =>
-            b.stock > 0 &&
-            (b.waitingForOldStock === true || oldStockJustHitZero),
-        );
-        if (
-          candidateNewBatch &&
-          !activatingNewStockIds.current.has(candidateNewBatch.id)
-        ) {
-          activatingNewStockIds.current.add(candidateNewBatch.id);
-          setStockItemAvailability(candidateNewBatch.id, true)
-            .then(() => {
+      const pending = med.pendingNewStocks ?? [];
+      if (
+        med.stock <= 0 &&
+        pending.length > 0 &&
+        !activatingNewStockIds.current.has(med.id)
+      ) {
+        activatingNewStockIds.current.add(med.id);
+        promotePendingStockIfNeeded(med)
+          .then((promoted: boolean) => {
+            if (promoted) {
               showToast(
-                `Old stock of ${candidateNewBatch.name} reached 0 — New stock is now automatically Available!`,
+                `Old stock of ${med.name} reached 0 — New stock is now automatically Available!`,
               );
-            })
-            .catch((error) => {
-              console.error("Could not auto-activate new stock:", error);
-            })
-            .finally(() => {
-              activatingNewStockIds.current.delete(candidateNewBatch.id);
-            });
-        }
+            }
+          })
+          .catch((error: unknown) => {
+            console.error("Could not auto-promote pending new stock:", error);
+          })
+          .finally(() => {
+            activatingNewStockIds.current.delete(med.id);
+          });
       }
     });
 
@@ -1056,16 +1079,18 @@ export default function AdminApp() {
       };
       if (editingMed) {
         const wasPositive = editingMed.stock > 0;
+        const hadPending = (editingMed.pendingNewStocks?.length ?? 0) > 0;
         await updateStockItem(editingMed.id, medicineData);
         if (
           wasPositive &&
           medForm.stock === 0 &&
-          medicines.some(
-            (m) =>
-              m.id !== editingMed.id &&
-              normalizeMedName(m.name) === normalizeMedName(medForm.name) &&
-              m.stock > 0,
-          )
+          (hadPending ||
+            medicines.some(
+              (m) =>
+                m.id !== editingMed.id &&
+                normalizeMedName(m.name) === normalizeMedName(medForm.name) &&
+                m.stock > 0,
+            ))
         ) {
           showToast(
             `Old stock of ${medForm.name} reached 0 — New stock is now automatically Available!`,
@@ -1101,12 +1126,19 @@ export default function AdminApp() {
   }
 
   async function handleToggleAvailable(med: StockItem) {
+    if (med.pendingBatchId) {
+      showToast(
+        "New stock is hidden from Customer Medicine & Availability and will automatically become available when the old stock reaches 0 quantity",
+        "warning",
+      );
+      return;
+    }
     const currentlyAvailable = isStockItemAvailable(med);
     if (!currentlyAvailable && med.stock <= 0) {
       showToast("Restock this medicine before marking it available", "error");
       return;
     }
-    const batchInfo = getStockBatchInfo(med, medicines);
+    const batchInfo = getStockBatchInfo(med, adminMedicines);
     if (!currentlyAvailable && batchInfo.hasActiveOldStock) {
       showToast(
         "New stock will automatically become available when the old stock reaches 0 quantity",
@@ -1116,8 +1148,7 @@ export default function AdminApp() {
     }
     try {
       await setStockItemAvailability(med.id, !currentlyAvailable, {
-        waitingForOldStock:
-          currentlyAvailable && batchInfo.hasActiveOldStock,
+        waitingForOldStock: currentlyAvailable && batchInfo.hasActiveOldStock,
       });
       showToast(
         currentlyAvailable
@@ -1185,9 +1216,10 @@ export default function AdminApp() {
     ).length,
   };
 
+  const adminMedicines = expandStockItemsForAdmin(medicines);
   const lowStockMeds = medicines.filter((m) => m.stock > 0 && m.stock <= 50);
   const expiringMedicines = expiryToday
-    ? medicines
+    ? adminMedicines
         .flatMap((medicine) => {
           if (!medicine.expirationDate || medicine.stock <= 0) return [];
           const daysUntilExpiration = getDaysUntilExpiration(
@@ -1203,15 +1235,15 @@ export default function AdminApp() {
   const medicineTypes = MEDICINE_CATEGORIES;
   const filteredMedicines = (
     medicineTypeFilter === "all"
-      ? [...medicines]
-      : medicines.filter((med) => med.type.trim() === medicineTypeFilter)
+      ? [...adminMedicines]
+      : adminMedicines.filter((med) => med.type.trim() === medicineTypeFilter)
   ).sort((a, b) => {
     const nameCompare = normalizeMedName(a.name).localeCompare(
       normalizeMedName(b.name),
     );
     if (nameCompare !== 0) return nameCompare;
-    const aRole = getStockBatchInfo(a, medicines).role === "old" ? 0 : 1;
-    const bRole = getStockBatchInfo(b, medicines).role === "old" ? 0 : 1;
+    const aRole = getStockBatchInfo(a, adminMedicines).role === "old" ? 0 : 1;
+    const bRole = getStockBatchInfo(b, adminMedicines).role === "old" ? 0 : 1;
     return aRole - bRole;
   });
 
@@ -2285,7 +2317,8 @@ export default function AdminApp() {
                       New Stock
                     </span>
                     <span className="text-gray-600 text-xs">
-                      Newly added / replacement stock (auto-replaces Old Stock at 0)
+                      Newly added / replacement stock (auto-replaces Old Stock
+                      at 0)
                     </span>
                   </div>
                 </div>
@@ -2342,7 +2375,10 @@ export default function AdminApp() {
                                 expiryToday,
                               )
                             : null;
-                        const batchInfo = getStockBatchInfo(med, medicines);
+                        const batchInfo = getStockBatchInfo(
+                          med,
+                          adminMedicines,
+                        );
                         const isNewBatch = batchInfo.role === "new";
                         return (
                           <tr
@@ -2509,7 +2545,7 @@ export default function AdminApp() {
                             expiryToday,
                           )
                         : null;
-                    const batchInfo = getStockBatchInfo(med, medicines);
+                    const batchInfo = getStockBatchInfo(med, adminMedicines);
                     const isNewBatch = batchInfo.role === "new";
                     return (
                       <div
