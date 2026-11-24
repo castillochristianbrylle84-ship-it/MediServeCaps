@@ -16,6 +16,7 @@ import {
   deleteStockItem,
   setStockItemAvailability,
   isStockItemAvailable,
+  promotePendingStockIfNeeded,
   updateQueueEntryStatus,
   deleteQueueEntry,
   getQueueEntriesForDateRange,
@@ -25,26 +26,7 @@ import {
   type QueueEntry,
 } from "@/lib/firestore";
 
-interface PendingStockBatch {
-  batchId: string;
-  name: string;
-  type: string;
-  stock: number;
-  genericName?: string;
-  dosageStrength?: string;
-  dosageForm?: string;
-  unitOfMeasurement?: string;
-  batchNumber?: string;
-  minimumStock?: number;
-  storageLocation?: string;
-  manufacturingDate?: string;
-  expirationDate?: string;
-  receivedDate?: string;
-  createdAtMs?: number;
-}
-
 type StockItem = BaseStockItem & {
-  pendingNewStocks?: PendingStockBatch[];
   parentStockId?: string;
   pendingBatchId?: string;
 };
@@ -82,15 +64,6 @@ function expandStockItemsForAdmin(items: StockItem[]): StockItem[] {
     }
   }
   return expanded;
-}
-
-async function promotePendingStockIfNeeded(med: StockItem): Promise<boolean> {
-  const pending = Array.isArray(med.pendingNewStocks)
-    ? med.pendingNewStocks
-    : [];
-  if (med.stock > 0 || pending.length === 0) return false;
-  await updateStockItem(med.id, { stock: 0 });
-  return true;
 }
 
 // Add this at the top of your app/admin/page.tsx file
@@ -782,21 +755,31 @@ export default function AdminApp() {
   useEffect(() => {
     if (!medicines.length) return;
 
-    medicines.forEach((med) => {
+    const newAlerts = medicines.flatMap((med) => {
       if (
         med.stock > 0 &&
         med.stock <= 50 &&
         !alertedLowStockIds.current.has(med.id)
       ) {
         alertedLowStockIds.current.add(med.id);
-        showToast(
-          `Low stock alert: ${med.name} has ${med.stock} remaining`,
-          "error",
-        );
+        return [med];
       } else if (med.stock <= 0 || med.stock > 50) {
         alertedLowStockIds.current.delete(med.id);
       }
+      return [];
     });
+
+    if (newAlerts.length === 1) {
+      showToast(
+        `Low stock alert: ${newAlerts[0].name} has ${newAlerts[0].stock} remaining`,
+        "error",
+      );
+    } else if (newAlerts.length > 1) {
+      showToast(
+        `Low stock alert: ${newAlerts.length} medicines need restocking.`,
+        "error",
+      );
+    }
   }, [medicines, showToast]);
 
   // Automatically manage Old Stock -> New Stock availability transition:
@@ -805,7 +788,7 @@ export default function AdminApp() {
   useEffect(() => {
     if (!medicines.length) return;
 
-    medicines.forEach((med) => {
+    const promotions = medicines.flatMap((med) => {
       const pending = med.pendingNewStocks ?? [];
       if (
         med.stock <= 0 &&
@@ -813,22 +796,40 @@ export default function AdminApp() {
         !activatingNewStockIds.current.has(med.id)
       ) {
         activatingNewStockIds.current.add(med.id);
-        promotePendingStockIfNeeded(med)
-          .then((promoted: boolean) => {
-            if (promoted) {
-              showToast(
-                `Old stock of ${med.name} reached 0 — New stock is now automatically Available!`,
+        return [
+          promotePendingStockIfNeeded(med.id)
+            .then((promoted) => (promoted ? med.name : null))
+            .catch((error: unknown) => {
+              console.error(
+                "Could not auto-promote pending new stock:",
+                error,
               );
-            }
-          })
-          .catch((error: unknown) => {
-            console.error("Could not auto-promote pending new stock:", error);
-          })
-          .finally(() => {
-            activatingNewStockIds.current.delete(med.id);
-          });
+              return null;
+            })
+            .finally(() => {
+              activatingNewStockIds.current.delete(med.id);
+            }),
+        ];
       }
+      return [];
     });
+
+    if (promotions.length > 0) {
+      void Promise.all(promotions).then((promotedNames) => {
+        const names = promotedNames.filter(
+          (name): name is string => name !== null,
+        );
+        if (names.length === 1) {
+          showToast(
+            `Old stock of ${names[0]} reached 0 — New stock is now automatically Available!`,
+          );
+        } else if (names.length > 1) {
+          showToast(
+            `New stock is now automatically available for ${names.length} medicines.`,
+          );
+        }
+      });
+    }
 
     const nextMap = new Map<string, number>();
     medicines.forEach((med) => {

@@ -41,6 +41,7 @@ export interface StockItem {
   manualUnavailable?: boolean;
   isNewStock?: boolean;
   waitingForOldStock?: boolean;
+  pendingNewStocks?: PendingStockBatch[];
   genericName?: string;
   dosageStrength?: string;
   dosageForm?: string;
@@ -53,6 +54,24 @@ export interface StockItem {
   receivedDate?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+}
+
+export interface PendingStockBatch {
+  batchId: string;
+  name: string;
+  type: string;
+  stock: number;
+  genericName?: string;
+  dosageStrength?: string;
+  dosageForm?: string;
+  unitOfMeasurement?: string;
+  batchNumber?: string;
+  minimumStock?: number;
+  storageLocation?: string;
+  manufacturingDate?: string;
+  expirationDate?: string;
+  receivedDate?: string;
+  createdAtMs?: number;
 }
 
 export interface QueueEntry {
@@ -184,6 +203,68 @@ export function isStockItemAvailable(item: StockItem): boolean {
   return item.stock > 0 && item.available && item.manualUnavailable !== true;
 }
 
+function getPendingBatchPromotion(
+  data: DocumentData,
+): Partial<StockItem> | null {
+  const pending = Array.isArray(data.pendingNewStocks)
+    ? (data.pendingNewStocks as PendingStockBatch[])
+    : [];
+  const nextIndex = pending.findIndex(
+    (batch) =>
+      batch !== null &&
+      typeof batch === "object" &&
+      typeof batch.stock === "number" &&
+      Number.isFinite(batch.stock) &&
+      batch.stock > 0,
+  );
+  if (nextIndex < 0) return null;
+
+  const nextBatch = pending[nextIndex];
+  return {
+    name: nextBatch.name || data.name,
+    type: nextBatch.type || data.type,
+    stock: nextBatch.stock,
+    available: true,
+    manualUnavailable: false,
+    isNewStock: true,
+    waitingForOldStock: false,
+    genericName: nextBatch.genericName ?? data.genericName ?? "",
+    dosageStrength: nextBatch.dosageStrength ?? data.dosageStrength ?? "",
+    dosageForm: nextBatch.dosageForm ?? data.dosageForm ?? "",
+    unitOfMeasurement:
+      nextBatch.unitOfMeasurement ?? data.unitOfMeasurement ?? "",
+    batchNumber: nextBatch.batchNumber ?? "",
+    minimumStock: nextBatch.minimumStock ?? data.minimumStock ?? 0,
+    storageLocation: nextBatch.storageLocation ?? data.storageLocation ?? "",
+    manufacturingDate: nextBatch.manufacturingDate ?? "",
+    expirationDate: nextBatch.expirationDate ?? "",
+    receivedDate: nextBatch.receivedDate ?? "",
+    pendingNewStocks: pending.slice(nextIndex + 1),
+  };
+}
+
+export async function promotePendingStockIfNeeded(id: string): Promise<boolean> {
+  const stockRef = doc(db, "stock", id);
+  return runTransaction(db, async (transaction) => {
+    const stockSnap = await transaction.get(stockRef);
+    if (!stockSnap.exists()) throw new Error("Medicine not found.");
+
+    const data = stockSnap.data();
+    const stock =
+      typeof data.stock === "number" && Number.isFinite(data.stock)
+        ? Math.max(0, data.stock)
+        : 0;
+    if (stock > 0) return false;
+    const promotion = getPendingBatchPromotion(data);
+    if (!promotion) return false;
+    transaction.update(stockRef, {
+      ...promotion,
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  });
+}
+
 export async function getStockItems(): Promise<StockItem[]> {
   const snap = await getDocs(collection(db, "stock"));
   return sortStockItemsOldestFirst(
@@ -300,6 +381,8 @@ export async function updateStockItem(
       data.stock === undefined
         ? currentStock
         : Math.max(0, Number.isFinite(data.stock) ? data.stock : 0);
+    const promotion =
+      stock === 0 ? getPendingBatchPromotion(currentData) : null;
 
     resultingName =
       typeof data.name === "string"
@@ -307,14 +390,24 @@ export async function updateStockItem(
         : typeof currentData.name === "string"
           ? currentData.name
           : "";
-    resultingStock = stock;
+    if (promotion) {
+      if (typeof promotion.name === "string") {
+        resultingName = promotion.name;
+      }
+      resultingStock = promotion.stock ?? stock;
+    } else {
+      resultingStock = stock;
+    }
 
     transaction.update(stockRef, {
       ...data,
-      stock,
-      manualUnavailable,
-      ...(stock === 0 ? { waitingForOldStock: false } : {}),
-      available: stock > 0 && !manualUnavailable,
+      ...promotion,
+      stock: promotion ? (promotion.stock ?? stock) : stock,
+      manualUnavailable: promotion ? false : manualUnavailable,
+      ...(!promotion && stock === 0 ? { waitingForOldStock: false } : {}),
+      available: promotion
+        ? true
+        : stock > 0 && !manualUnavailable,
       updatedAt: serverTimestamp(),
     });
   });
