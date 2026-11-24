@@ -1117,7 +1117,7 @@ export default function AdminApp() {
               {/* Stats */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
                 {[
-                  { title: "Waiting Patients", value: counts.waiting, sub: `${entries.filter((e) => e.status === "waiting" && e.patientType === "pwd").length} PWD priority`, icon: <UsersIcon className="w-6 h-6" /> },
+                  { title: "Waiting Patients", value: counts.waiting, sub: `${entries.filter((e) => e.status === "waiting" && e.patientType === "pwd").length} Priority`, icon: <UsersIcon className="w-6 h-6" /> },
                   { title: "Served Today",      value: counts.served,  sub: "Completed today", icon: <ActivityIcon className="w-6 h-6" /> },
                   { title: "Available Medicines",value: medicines.filter(isStockItemAvailable).length, sub: `${medicines.length} total in inventory`, icon: <BoxIcon className="w-6 h-6" /> },
                   { title: "Low Stock Items",   value: lowStockMeds.length, sub: "Needs restocking", icon: <AlertTriangleIcon className="w-6 h-6" /> },
@@ -1715,7 +1715,7 @@ export default function AdminApp() {
                       <p className="text-gray-500 text-sm mb-1">Queue Number</p>
                       <p className={`break-words text-[clamp(2rem,12vw,4.5rem)] font-black mb-3 ${isPWD ? "text-blue-700" : "text-emerald-700"}`}>{entry.queueNumber}</p>
                       <div className="flex items-center justify-center gap-2">
-                        {isPWD && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm font-semibold border border-blue-200">PWD Priority</span>}
+                        {isPWD && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm font-semibold border border-blue-200">Priority</span>}
                       </div>
                     </div>
 
