@@ -1130,7 +1130,7 @@ export default function CustomerApp() {
                   {isCurrentArchived
                     ? "Archived — Missed 15 Mins"
                     : currentEntry.patientType === "pwd"
-                      ? "PWD Priority"
+                      ? "Priority"
                       : "Regular"}
                 </span>
               </div>
