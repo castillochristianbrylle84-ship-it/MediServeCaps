@@ -897,7 +897,13 @@ export default function CustomerApp() {
                               QUEUE NUMBER
                             </p>
                             <p
-                              className={`text-3xl font-black ${isArchived ? "text-blue-300" : "text-[#166534]"}`}
+                              className={`text-3xl font-black ${
+                                isArchived
+                                  ? "text-blue-300"
+                                  : entry.patientType === "pwd"
+                                    ? "text-blue-700"
+                                    : "text-[#166534]"
+                              }`}
                             >
                               {entry.queueNumber}
                             </p>
@@ -1769,7 +1775,11 @@ export default function CustomerApp() {
                     </p>
                     <p
                       className={`text-[clamp(2rem,10vw,4.5rem)] font-bold tracking-tighter mt-2 break-words ${
-                        isCurrentArchived ? "text-amber-800" : "text-[#166534]"
+                        isCurrentArchived
+                          ? "text-amber-800"
+                          : currentEntry.patientType === "pwd"
+                            ? "text-blue-700"
+                            : "text-[#166534]"
                       }`}
                     >
                       {currentEntry.queueNumber}
