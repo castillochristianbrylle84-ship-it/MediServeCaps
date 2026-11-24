@@ -897,7 +897,7 @@ export default function CustomerApp() {
                               QUEUE NUMBER
                             </p>
                             <p
-                              className={`text-3xl font-black ${isArchived ? "text-amber-800" : "text-[#166534]"}`}
+                              className={`text-3xl font-black ${isArchived ? "text-blue-300" : "text-[#166534]"}`}
                             >
                               {entry.queueNumber}
                             </p>
