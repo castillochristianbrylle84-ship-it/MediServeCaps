@@ -82,7 +82,7 @@ export async function POST(request: Request) {
       return next;
     });
 
-    const prefix = patientType === "pwd" ? "PWD" : "REG";
+    const prefix = patientType === "pwd" ? "P" : "REG";
     const formattedQueueNumber = `${prefix}${String(nextNumber).padStart(3, "0")}`;
 
     return Response.json({
