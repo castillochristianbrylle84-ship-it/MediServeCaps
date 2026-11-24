@@ -13,6 +13,7 @@ import {
   subscribeQueueEntries,
   addStockItem,
   updateStockItem,
+  deleteStockItem,
   setStockItemAvailability,
   isStockItemAvailable,
   updateQueueEntryStatus,
@@ -151,6 +152,34 @@ function getStockStatus(stock: number, available: boolean) {
   return {
     label: "In Stock",
     color: "text-emerald-700 bg-emerald-50 border-emerald-200",
+  };
+}
+
+function normalizeMedName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function getStockBatchInfo(
+  med: StockItem,
+  allMedicines: StockItem[],
+): {
+  role: "old" | "new";
+  hasMultipleBatches: boolean;
+} {
+  const key = normalizeMedName(med.name);
+  const sameNameMeds = allMedicines.filter(
+    (item) => normalizeMedName(item.name) === key,
+  );
+  if (sameNameMeds.length > 1) {
+    const isOldestActive = sameNameMeds[0]?.id === med.id;
+    return {
+      role: isOldestActive ? "old" : "new",
+      hasMultipleBatches: true,
+    };
+  }
+  return {
+    role: med.isNewStock ? "new" : "old",
+    hasMultipleBatches: false,
   };
 }
 
@@ -488,6 +517,7 @@ export default function AdminApp() {
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
   const alertedLowStockIds = useRef(new Set<string>());
   const alertedExpiryKeys = useRef(new Set<string>());
+  const replacingZeroStockIds = useRef(new Set<string>());
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("daily");
   const [reportCategory, setReportCategory] = useState("all");
   const [reportMedicine, setReportMedicine] = useState("all");
@@ -684,6 +714,48 @@ export default function AdminApp() {
       } else if (med.stock <= 0 || med.stock > 50) {
         alertedLowStockIds.current.delete(med.id);
       }
+    });
+  }, [medicines, showToast]);
+
+  // Automatically replace 0-quantity old stock when a new stock of the same medicine exists
+  useEffect(() => {
+    if (!medicines.length) return;
+
+    const groups = new Map<string, StockItem[]>();
+    medicines.forEach((med) => {
+      const key = normalizeMedName(med.name);
+      const list = groups.get(key) ?? [];
+      list.push(med);
+      groups.set(key, list);
+    });
+
+    groups.forEach((group) => {
+      if (group.length <= 1) return;
+      group.forEach((batch, index) => {
+        const hasReplacement = group.some(
+          (other, otherIdx) =>
+            other.id !== batch.id && (other.stock > 0 || otherIdx > index),
+        );
+        if (
+          batch.stock <= 0 &&
+          hasReplacement &&
+          !replacingZeroStockIds.current.has(batch.id)
+        ) {
+          replacingZeroStockIds.current.add(batch.id);
+          deleteStockItem(batch.id)
+            .then(() => {
+              showToast(
+                `Old stock of ${batch.name} reached 0 — replaced by new stock`,
+              );
+            })
+            .catch((error) => {
+              console.error("Could not remove 0-quantity old stock:", error);
+            })
+            .finally(() => {
+              replacingZeroStockIds.current.delete(batch.id);
+            });
+        }
+      });
     });
   }, [medicines, showToast]);
 
@@ -1036,10 +1108,19 @@ export default function AdminApp() {
         .sort((a, b) => a.daysUntilExpiration - b.daysUntilExpiration)
     : [];
   const medicineTypes = MEDICINE_CATEGORIES;
-  const filteredMedicines =
+  const filteredMedicines = (
     medicineTypeFilter === "all"
-      ? medicines
-      : medicines.filter((med) => med.type.trim() === medicineTypeFilter);
+      ? [...medicines]
+      : medicines.filter((med) => med.type.trim() === medicineTypeFilter)
+  ).sort((a, b) => {
+    const nameCompare = normalizeMedName(a.name).localeCompare(
+      normalizeMedName(b.name),
+    );
+    if (nameCompare !== 0) return nameCompare;
+    const aRole = getStockBatchInfo(a, medicines).role === "old" ? 0 : 1;
+    const bRole = getStockBatchInfo(b, medicines).role === "old" ? 0 : 1;
+    return aRole - bRole;
+  });
 
   const reportSourceEntries =
     reportPeriod === "daily" ? entries : reportHistoryEntries;
@@ -2090,6 +2171,33 @@ export default function AdminApp() {
                 </div>
               )}
 
+              {/* Stock Color Coding Legend */}
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3 bg-white border border-emerald-100 rounded-2xl px-4 py-3 shadow-sm">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                  Stock Color Coding
+                </span>
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-emerald-600 ring-2 ring-emerald-100" />
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Old Stock
+                    </span>
+                    <span className="text-gray-600 text-xs">
+                      Current active batch (dispensed first)
+                    </span>
+                  </div>
+                  <div className="inline-flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-blue-600 ring-2 ring-blue-100" />
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                      New Stock
+                    </span>
+                    <span className="text-gray-600 text-xs">
+                      Newly added / replacement stock (auto-replaces Old Stock at 0)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Desktop Table */}
               <div className="hidden 2xl:block bg-white border border-emerald-100 rounded-2xl overflow-x-auto shadow-sm">
                 <table className="min-w-[1000px] w-full">
@@ -2141,24 +2249,64 @@ export default function AdminApp() {
                                 expiryToday,
                               )
                             : null;
+                        const batchInfo = getStockBatchInfo(med, medicines);
+                        const isNewBatch = batchInfo.role === "new";
                         return (
                           <tr
                             key={med.id}
                             data-medicine-id={med.id}
-                            className={`scroll-mt-24 transition-colors ${
+                            className={`scroll-mt-24 transition-colors border-l-4 ${
                               focusedMedicine?.id === med.id
-                                ? "bg-amber-100 outline outline-2 outline-amber-400"
-                                : "hover:bg-emerald-50/40"
+                                ? "bg-amber-100 outline outline-2 outline-amber-400 border-l-amber-500"
+                                : isNewBatch
+                                  ? "border-l-blue-600 bg-blue-50/40 hover:bg-blue-50/70"
+                                  : "border-l-emerald-600 bg-emerald-50/20 hover:bg-emerald-50/50"
                             }`}
                           >
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-4">
-                                <div className="w-11 h-11 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center">
-                                  <BoxIcon className="w-5 h-5 text-emerald-700" />
+                                <div
+                                  className={`w-11 h-11 rounded-xl flex items-center justify-center border ${
+                                    isNewBatch
+                                      ? "bg-blue-100 border-blue-300"
+                                      : "bg-emerald-50 border-emerald-200"
+                                  }`}
+                                >
+                                  <BoxIcon
+                                    className={`w-5 h-5 ${
+                                      isNewBatch
+                                        ? "text-blue-700"
+                                        : "text-emerald-700"
+                                    }`}
+                                  />
                                 </div>
-                                <p className="font-semibold text-gray-900">
-                                  {med.name}
-                                </p>
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p
+                                      className={`font-semibold ${
+                                        isNewBatch
+                                          ? "text-blue-950"
+                                          : "text-gray-900"
+                                      }`}
+                                    >
+                                      {med.name}
+                                    </p>
+                                    <span
+                                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                                        isNewBatch
+                                          ? "bg-blue-100 text-blue-800 border-blue-300"
+                                          : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                      }`}
+                                    >
+                                      {isNewBatch ? "New Stock" : "Old Stock"}
+                                    </span>
+                                  </div>
+                                  {med.batchNumber && (
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                      Batch: {med.batchNumber}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             </td>
                             <td className="px-6 py-4">
@@ -2268,27 +2416,63 @@ export default function AdminApp() {
                             expiryToday,
                           )
                         : null;
+                    const batchInfo = getStockBatchInfo(med, medicines);
+                    const isNewBatch = batchInfo.role === "new";
                     return (
                       <div
                         key={med.id}
                         data-medicine-id={med.id}
-                        className={`scroll-mt-24 rounded-2xl p-5 shadow-sm transition-colors ${
+                        className={`scroll-mt-24 rounded-2xl p-5 shadow-sm transition-colors border-l-4 ${
                           focusedMedicine?.id === med.id
-                            ? "border-amber-400 bg-amber-50 ring-2 ring-amber-300 ring-offset-2"
-                            : "border border-emerald-100 bg-white"
+                            ? "border-amber-400 border-l-amber-500 bg-amber-50 ring-2 ring-amber-300 ring-offset-2"
+                            : isNewBatch
+                              ? "border border-blue-200 border-l-blue-600 bg-blue-50/40"
+                              : "border border-emerald-200 border-l-emerald-600 bg-emerald-50/20"
                         }`}
                       >
                         <div className="flex items-start gap-4 mb-4">
-                          <div className="w-11 h-11 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center">
-                            <BoxIcon className="w-5 h-5 text-emerald-700" />
+                          <div
+                            className={`w-11 h-11 rounded-xl flex items-center justify-center border ${
+                              isNewBatch
+                                ? "bg-blue-100 border-blue-300"
+                                : "bg-emerald-50 border-emerald-200"
+                            }`}
+                          >
+                            <BoxIcon
+                              className={`w-5 h-5 ${
+                                isNewBatch
+                                  ? "text-blue-700"
+                                  : "text-emerald-700"
+                              }`}
+                            />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="break-words font-bold text-gray-900">
-                              {med.name}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p
+                                className={`break-words font-bold ${
+                                  isNewBatch ? "text-blue-950" : "text-gray-900"
+                                }`}
+                              >
+                                {med.name}
+                              </p>
+                              <span
+                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                                  isNewBatch
+                                    ? "bg-blue-100 text-blue-800 border-blue-300"
+                                    : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                }`}
+                              >
+                                {isNewBatch ? "New Stock" : "Old Stock"}
+                              </span>
+                            </div>
                             <p className="break-words text-gray-500 text-sm">
                               {med.type}
                             </p>
+                            {med.batchNumber && (
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Batch: {med.batchNumber}
+                              </p>
+                            )}
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             <span

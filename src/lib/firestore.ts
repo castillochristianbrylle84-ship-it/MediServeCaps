@@ -39,6 +39,7 @@ export interface StockItem {
   stock: number;
   available: boolean;
   manualUnavailable?: boolean;
+  isNewStock?: boolean;
   genericName?: string;
   dosageStrength?: string;
   dosageForm?: string;
@@ -83,7 +84,7 @@ export function isGetReadyExpired(
     timestamp?: string;
     updatedAt?: Timestamp;
   },
-  nowMs = Date.now()
+  nowMs = Date.now(),
 ): boolean {
   if (entry.status !== "getready") return false;
   const readyTime = entry.readyAt
@@ -103,7 +104,7 @@ export function getReadyRemainingMs(
     timestamp?: string;
     updatedAt?: Timestamp;
   },
-  nowMs = Date.now()
+  nowMs = Date.now(),
 ): number {
   if (entry.status !== "getready") return 0;
   const readyTime = entry.readyAt
@@ -118,6 +119,43 @@ export function getReadyRemainingMs(
 }
 
 // ─── Stock / Medicine helpers ─────────────────────────────────────────────────
+
+function normalizeMedicineName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function getStockCreatedTimeMs(data: {
+  createdAt?: Timestamp;
+  receivedDate?: string;
+}): number {
+  if (data.createdAt instanceof Timestamp) {
+    return data.createdAt.toMillis();
+  }
+  if (typeof data.receivedDate === "string" && data.receivedDate) {
+    const parsed = Date.parse(data.receivedDate);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function sortStockItemsOldestFirst<
+  T extends {
+    id: string;
+    name?: string;
+    isNewStock?: boolean;
+    createdAt?: Timestamp;
+    receivedDate?: string;
+  },
+>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aNew = a.isNewStock === true ? 1 : 0;
+    const bNew = b.isNewStock === true ? 1 : 0;
+    if (aNew !== bNew) return aNew - bNew;
+    const timeDiff = getStockCreatedTimeMs(a) - getStockCreatedTimeMs(b);
+    if (timeDiff !== 0) return timeDiff;
+    return a.id.localeCompare(b.id);
+  });
+}
 
 function toStockItem(id: string, data: DocumentData): StockItem {
   const stock =
@@ -135,6 +173,7 @@ function toStockItem(id: string, data: DocumentData): StockItem {
     id,
     stock,
     manualUnavailable,
+    isNewStock: data.isNewStock === true,
     available: stock > 0 && data.available === true && !manualUnavailable,
   } as StockItem;
 }
@@ -145,24 +184,60 @@ export function isStockItemAvailable(item: StockItem): boolean {
 
 export async function getStockItems(): Promise<StockItem[]> {
   const snap = await getDocs(collection(db, "stock"));
-  return snap.docs.map((d) => toStockItem(d.id, d.data()));
+  return sortStockItemsOldestFirst(
+    snap.docs.map((d) => toStockItem(d.id, d.data()))
+  );
 }
 
 export function subscribeStockItems(
-  cb: (items: StockItem[]) => void
+  cb: (items: StockItem[]) => void,
 ): Unsubscribe {
   return onSnapshot(collection(db, "stock"), (snap) => {
-    cb(snap.docs.map((d) => toStockItem(d.id, d.data())));
+    cb(
+      sortStockItemsOldestFirst(
+        snap.docs.map((d) => toStockItem(d.id, d.data()))
+      )
+    );
   });
 }
 
 export async function addStockItem(
-  item: Omit<StockItem, "id">
+  item: Omit<StockItem, "id">,
 ): Promise<string> {
+  const normalizedTargetName = normalizeMedicineName(item.name);
+  const existingSnap = await getDocs(collection(db, "stock"));
+  const sameMedicineDocs = existingSnap.docs.filter((d) => {
+    const data = d.data();
+    return (
+      typeof data.name === "string" &&
+      normalizeMedicineName(data.name) === normalizedTargetName
+    );
+  });
+
+  const isReplacementOrAdditionalStock = sameMedicineDocs.length > 0;
+
+  for (const existingDoc of sameMedicineDocs) {
+    const existingData = existingDoc.data();
+    const existingQty =
+      typeof existingData.stock === "number" &&
+      Number.isFinite(existingData.stock)
+        ? Math.max(0, existingData.stock)
+        : 0;
+    if (existingQty <= 0) {
+      await deleteDoc(doc(db, "stock", existingDoc.id));
+    } else if (existingData.isNewStock === true) {
+      await updateDoc(doc(db, "stock", existingDoc.id), {
+        isNewStock: false,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  }
+
   const ref = await addDoc(collection(db, "stock"), {
     ...item,
     stock: Number.isFinite(item.stock) ? Math.max(0, item.stock) : 0,
     manualUnavailable: item.manualUnavailable === true,
+    isNewStock: isReplacementOrAdditionalStock,
     available:
       item.stock > 0 &&
       Number.isFinite(item.stock) &&
@@ -176,16 +251,20 @@ export async function addStockItem(
 
 export async function updateStockItem(
   id: string,
-  data: Partial<Omit<StockItem, "id">>
+  data: Partial<Omit<StockItem, "id">>,
 ): Promise<void> {
   const stockRef = doc(db, "stock", id);
+  let resultingName = "";
+  let resultingStock = -1;
+
   await runTransaction(db, async (transaction) => {
     const stockSnap = await transaction.get(stockRef);
     if (!stockSnap.exists()) throw new Error("Medicine not found.");
 
     const currentData = stockSnap.data();
     const currentStock =
-      typeof currentData.stock === "number" && Number.isFinite(currentData.stock)
+      typeof currentData.stock === "number" &&
+      Number.isFinite(currentData.stock)
         ? Math.max(0, currentData.stock)
         : 0;
     const currentManualUnavailable =
@@ -202,6 +281,14 @@ export async function updateStockItem(
         ? currentStock
         : Math.max(0, Number.isFinite(data.stock) ? data.stock : 0);
 
+    resultingName =
+      typeof data.name === "string"
+        ? data.name
+        : typeof currentData.name === "string"
+          ? currentData.name
+          : "";
+    resultingStock = stock;
+
     transaction.update(stockRef, {
       ...data,
       stock,
@@ -210,11 +297,27 @@ export async function updateStockItem(
       updatedAt: serverTimestamp(),
     });
   });
+
+  if (resultingStock === 0 && resultingName) {
+    const normalizedName = normalizeMedicineName(resultingName);
+    const allSnap = await getDocs(collection(db, "stock"));
+    const otherBatches = allSnap.docs.filter((d) => {
+      if (d.id === id) return false;
+      const dData = d.data();
+      return (
+        typeof dData.name === "string" &&
+        normalizeMedicineName(dData.name) === normalizedName
+      );
+    });
+    if (otherBatches.length > 0) {
+      await deleteDoc(stockRef);
+    }
+  }
 }
 
 export async function setStockItemAvailability(
   id: string,
-  available: boolean
+  available: boolean,
 ): Promise<void> {
   const stockRef = doc(db, "stock", id);
   await runTransaction(db, async (transaction) => {
@@ -244,23 +347,41 @@ export async function deleteStockItem(id: string): Promise<void> {
 
 export async function deductStock(
   medicineName: string,
-  qty: number
+  qty: number,
 ): Promise<void> {
+  const normalizedTarget = normalizeMedicineName(medicineName);
   const snap = await getDocs(collection(db, "stock"));
-  for (const d of snap.docs) {
-    const data = d.data() as StockItem;
-    if (data.name === medicineName) {
-      const currentStock =
-        typeof data.stock === "number" && Number.isFinite(data.stock)
-          ? Math.max(0, data.stock)
-          : 0;
-      const newStock = Math.max(0, currentStock - qty);
+  const matchingDocs = sortStockItemsOldestFirst(
+    snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as Omit<StockItem, "id">) }))
+      .filter(
+        (d) =>
+          typeof d.name === "string" &&
+          normalizeMedicineName(d.name) === normalizedTarget
+      )
+  );
+
+  let remainingToDeduct = qty;
+  for (let i = 0; i < matchingDocs.length; i++) {
+    if (remainingToDeduct <= 0) break;
+    const d = matchingDocs[i];
+    const currentStock =
+      typeof d.stock === "number" && Number.isFinite(d.stock)
+        ? Math.max(0, d.stock)
+        : 0;
+    const deducted = Math.min(currentStock, remainingToDeduct);
+    const newStock = Math.max(0, currentStock - deducted);
+    remainingToDeduct -= deducted;
+
+    const hasReplacementBatch = matchingDocs.length > 1 && i < matchingDocs.length - 1;
+    if (newStock === 0 && hasReplacementBatch) {
+      await deleteDoc(doc(db, "stock", d.id));
+    } else {
       await updateDoc(doc(db, "stock", d.id), {
         stock: newStock,
         ...(newStock === 0 ? { available: false } : {}),
         updatedAt: serverTimestamp(),
       });
-      break;
     }
   }
 }
@@ -325,10 +446,14 @@ function snapToEntries(snap: QuerySnapshot<DocumentData>): QueueEntry[] {
             ? data.archivedAt
             : undefined,
       archivedReason:
-        typeof data.archivedReason === "string" ? data.archivedReason : undefined,
+        typeof data.archivedReason === "string"
+          ? data.archivedReason
+          : undefined,
       wasServed: data.wasServed === true,
-      updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt : undefined,
-      createdAt: data.createdAt instanceof Timestamp ? data.createdAt : undefined,
+      updatedAt:
+        data.updatedAt instanceof Timestamp ? data.updatedAt : undefined,
+      createdAt:
+        data.createdAt instanceof Timestamp ? data.createdAt : undefined,
     } as QueueEntry;
   });
 }
@@ -380,7 +505,7 @@ export async function getQueueEntry(id: string): Promise<QueueEntry | null> {
 
 export async function getQueueEntriesForDateRange(
   startDate: string,
-  endDate: string
+  endDate: string,
 ): Promise<QueueEntry[]> {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
@@ -390,19 +515,19 @@ export async function getQueueEntriesForDateRange(
       query(
         collection(db, "customers"),
         where("queueDate", ">=", startDate),
-        where("queueDate", "<=", endDate)
-      )
+        where("queueDate", "<=", endDate),
+      ),
     ),
     getDocs(
       query(
         collection(db, "customers"),
         where("timestamp", ">=", start.toISOString()),
-        where("timestamp", "<", end.toISOString())
-      )
+        where("timestamp", "<", end.toISOString()),
+      ),
     ),
   ]);
   const entries = new Map(
-    snapToEntries(dateTagged).map((entry) => [entry.id, entry])
+    snapToEntries(dateTagged).map((entry) => [entry.id, entry]),
   );
   for (const entry of snapToEntries(timestamped)) {
     entries.set(entry.id, entry);
@@ -415,18 +540,18 @@ export async function getQueueEntries(): Promise<QueueEntry[]> {
   const [start, end] = getQueueDateRange(queueDate);
   const [dateTagged, legacy] = await Promise.all([
     getDocs(
-      query(collection(db, "customers"), where("queueDate", "==", queueDate))
+      query(collection(db, "customers"), where("queueDate", "==", queueDate)),
     ),
     getDocs(
       query(
         collection(db, "customers"),
         where("createdAt", ">=", Timestamp.fromDate(start)),
-        where("createdAt", "<", Timestamp.fromDate(end))
-      )
+        where("createdAt", "<", Timestamp.fromDate(end)),
+      ),
     ),
   ]);
   const entries = new Map(
-    snapToEntries(dateTagged).map((entry) => [entry.id, entry])
+    snapToEntries(dateTagged).map((entry) => [entry.id, entry]),
   );
   for (const entry of snapToEntries(legacy)) {
     if (
@@ -438,12 +563,12 @@ export async function getQueueEntries(): Promise<QueueEntry[]> {
   }
 
   return [...entries.values()].sort(
-    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)
+    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
   );
 }
 
 export function subscribeQueueEntries(
-  cb: (entries: QueueEntry[]) => void
+  cb: (entries: QueueEntry[]) => void,
 ): Unsubscribe {
   let queueDate = getQueueDate();
   let dateEntries = new Map<string, QueueEntry>();
@@ -458,8 +583,8 @@ export function subscribeQueueEntries(
     }
     cb(
       [...entries.values()].sort(
-        (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)
-      )
+        (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+      ),
     );
   };
 
@@ -471,34 +596,33 @@ export function subscribeQueueEntries(
 
     const [start, end] = getQueueDateRange(queueDate);
     dateUnsubscribe = onSnapshot(
-      query(
-        collection(db, "customers"),
-        where("queueDate", "==", queueDate)
-      ),
+      query(collection(db, "customers"), where("queueDate", "==", queueDate)),
       (snap) => {
         dateEntries = new Map(
-          snapToEntries(snap).map((entry) => [entry.id, entry])
+          snapToEntries(snap).map((entry) => [entry.id, entry]),
         );
         publish();
       },
-      (error) => console.error("Could not subscribe to today's queue:", error)
+      (error) => console.error("Could not subscribe to today's queue:", error),
     );
     legacyUnsubscribe = onSnapshot(
       query(
         collection(db, "customers"),
         where("createdAt", ">=", Timestamp.fromDate(start)),
-        where("createdAt", "<", Timestamp.fromDate(end))
+        where("createdAt", "<", Timestamp.fromDate(end)),
       ),
       (snap) => {
         legacyEntries = new Map(
           snapToEntries(snap)
-            .filter((entry) => !entry.queueDate || entry.queueDate === queueDate)
-            .map((entry) => [entry.id, entry])
+            .filter(
+              (entry) => !entry.queueDate || entry.queueDate === queueDate,
+            )
+            .map((entry) => [entry.id, entry]),
         );
         publish();
       },
       (error) =>
-        console.error("Could not subscribe to legacy queue entries:", error)
+        console.error("Could not subscribe to legacy queue entries:", error),
     );
   };
 
@@ -519,7 +643,7 @@ export function subscribeQueueEntries(
 }
 
 export async function getNextQueueNumber(
-  patientType: QueueEntry["patientType"]
+  patientType: QueueEntry["patientType"],
 ): Promise<{ queueDate: string; queueNumber: string }> {
   const response = await fetch("/api/queue/next-number", {
     method: "POST",
@@ -551,7 +675,7 @@ export async function getNextQueueNumber(
 }
 
 export async function addQueueEntry(
-  entry: Omit<QueueEntry, "id">
+  entry: Omit<QueueEntry, "id">,
 ): Promise<string> {
   const ref = await addDoc(collection(db, "customers"), {
     ...entry,
@@ -590,7 +714,7 @@ export async function addQueueEntry(
 export async function updateQueueEntryStatus(
   id: string,
   status: QueueEntry["status"],
-  metadata?: { archivedReason?: string }
+  metadata?: { archivedReason?: string },
 ): Promise<void> {
   const customerRef = doc(db, "customers", id);
   const activeQueueRefs =
@@ -601,7 +725,7 @@ export async function updateQueueEntryStatus(
               entry.id !== id &&
               !entry.wasServed &&
               entry.status !== "served" &&
-              entry.status !== "archived"
+              entry.status !== "archived",
           )
           .map((entry) => doc(db, "customers", entry.id))
       : [];
@@ -619,7 +743,7 @@ export async function updateQueueEntryStatus(
           (entrySnap) =>
             entrySnap.exists() &&
             entrySnap.get("status") === "getready" &&
-            entrySnap.get("wasServed") !== true
+            entrySnap.get("wasServed") !== true,
         );
         if (alreadyReady) {
           const readyAtVal = alreadyReady.get("readyAt");
@@ -654,24 +778,25 @@ export async function updateQueueEntryStatus(
             transaction.set(
               doc(db, expiredPatientType, alreadyReady.id),
               archiveUpdate,
-              { merge: true }
+              { merge: true },
             );
-            transaction.set(
-              doc(db, "orders", alreadyReady.id),
-              archiveUpdate,
-              { merge: true }
-            );
+            transaction.set(doc(db, "orders", alreadyReady.id), archiveUpdate, {
+              merge: true,
+            });
           } else {
             const queueNumber = alreadyReady.get("queueNumber") ?? "unknown";
             throw new Error(
-              `Queue #${queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`
+              `Queue #${queueNumber} is currently in "Get Ready". Mark them as Served before setting another patient to Get Ready.`,
             );
           }
         }
       }
 
       const customerData = customerSnap.data();
-      const patientType = customerData.patientType === "pwd" ? "pwd_patients" : "regular_patients";
+      const patientType =
+        customerData.patientType === "pwd"
+          ? "pwd_patients"
+          : "regular_patients";
       const patientRef = doc(db, patientType, id);
       const orderRef = doc(db, "orders", id);
 
@@ -694,12 +819,27 @@ export async function updateQueueEntryStatus(
   }
 
   const stockSnap = await getDocs(collection(db, "stock"));
-  const stockByName = new Map<string, typeof stockSnap.docs[number]>();
+  const stockDocsByName = new Map<string, typeof stockSnap.docs>();
   for (const stockDoc of stockSnap.docs) {
     const stockData = stockDoc.data();
-    if (typeof stockData.name === "string" && !stockByName.has(stockData.name)) {
-      stockByName.set(stockData.name, stockDoc);
+    if (typeof stockData.name === "string") {
+      const key = normalizeMedicineName(stockData.name);
+      const list = stockDocsByName.get(key) ?? [];
+      list.push(stockDoc);
+      stockDocsByName.set(key, list);
     }
+  }
+  for (const [key, docs] of stockDocsByName.entries()) {
+    const sorted = sortStockItemsOldestFirst(
+      docs.map((d) => ({
+        id: d.id,
+        doc: d,
+        isNewStock: d.data().isNewStock === true,
+        createdAt: d.data().createdAt instanceof Timestamp ? d.data().createdAt : undefined,
+        receivedDate: typeof d.data().receivedDate === "string" ? d.data().receivedDate : undefined,
+      }))
+    ).map((item) => item.doc);
+    stockDocsByName.set(key, sorted);
   }
 
   await runTransaction(db, async (transaction) => {
@@ -734,55 +874,69 @@ export async function updateQueueEntryStatus(
 
     medicines.forEach((medicine, index) => {
       if (typeof medicine !== "string") return;
+      const key = normalizeMedicineName(medicine);
       const quantity = Number(quantities[index] ?? 1);
       deductions.set(
-        medicine,
-        (deductions.get(medicine) ?? 0) +
-          (Number.isFinite(quantity) && quantity > 0 ? quantity : 1)
+        key,
+        (deductions.get(key) ?? 0) +
+          (Number.isFinite(quantity) && quantity > 0 ? quantity : 1),
       );
     });
 
-    const stockDeductions = [...deductions].flatMap(
-      ([medicineName, quantity]) => {
-        const stockDoc = stockByName.get(medicineName);
-        return stockDoc
-          ? [{ ref: doc(db, "stock", stockDoc.id), quantity }]
-          : [];
-      }
-    );
-    const stockSnapshots = await Promise.all(
-      stockDeductions.map(async ({ ref, quantity }) => ({
-        ref,
-        quantity,
-        snapshot: await transaction.get(ref),
-      }))
+    const stockDeductionGroups = await Promise.all(
+      [...deductions].map(async ([normalizedName, quantity]) => {
+        const docs = stockDocsByName.get(normalizedName) ?? [];
+        const snapshots = await Promise.all(
+          docs.map(async (stockDoc) => {
+            const ref = doc(db, "stock", stockDoc.id);
+            return {
+              ref,
+              snapshot: await transaction.get(ref),
+            };
+          })
+        );
+        return { quantity, snapshots };
+      })
     );
 
-    stockSnapshots.forEach(({ ref, quantity, snapshot: stockCurrent }) => {
-      if (!stockCurrent.exists()) return;
+    stockDeductionGroups.forEach(({ quantity, snapshots }) => {
+      const existingSnapshots = snapshots.filter((s) => s.snapshot.exists());
+      let remaining = quantity;
 
-      const stockData = stockCurrent.data();
-      const currentStock =
-        typeof stockData.stock === "number" && Number.isFinite(stockData.stock)
-          ? Math.max(0, stockData.stock)
-          : 0;
-      const newStock = Math.max(0, currentStock - quantity);
-      transaction.update(ref, {
-        stock: newStock,
-        manualUnavailable:
-          stockData.manualUnavailable === true ||
-          (stockData.manualUnavailable === undefined &&
-            stockData.available === false &&
-            currentStock > 0),
-        available:
-          newStock > 0 &&
-          stockData.manualUnavailable !== true &&
-          !(
-            stockData.manualUnavailable === undefined &&
-            stockData.available === false &&
-            currentStock > 0
-          ),
-        updatedAt: serverTimestamp(),
+      existingSnapshots.forEach(({ ref, snapshot: stockCurrent }, idx) => {
+        const stockData = stockCurrent.data()!;
+        const currentStock =
+          typeof stockData.stock === "number" && Number.isFinite(stockData.stock)
+            ? Math.max(0, stockData.stock)
+            : 0;
+        const deductAmount = Math.min(currentStock, remaining);
+        const newStock = Math.max(0, currentStock - deductAmount);
+        remaining -= deductAmount;
+
+        const hasNewerReplacement =
+          existingSnapshots.length > 1 && idx < existingSnapshots.length - 1;
+
+        if (newStock === 0 && hasNewerReplacement) {
+          transaction.delete(ref);
+        } else if (deductAmount > 0 || newStock === 0) {
+          transaction.update(ref, {
+            stock: newStock,
+            manualUnavailable:
+              stockData.manualUnavailable === true ||
+              (stockData.manualUnavailable === undefined &&
+                stockData.available === false &&
+                currentStock > 0),
+            available:
+              newStock > 0 &&
+              stockData.manualUnavailable !== true &&
+              !(
+                stockData.manualUnavailable === undefined &&
+                stockData.available === false &&
+                currentStock > 0
+              ),
+            updatedAt: serverTimestamp(),
+          });
+        }
       });
     });
 
@@ -794,7 +948,7 @@ export async function updateQueueEntryStatus(
 
 export async function archiveQueueEntry(
   id: string,
-  reason = "no_show"
+  reason = "no_show",
 ): Promise<void> {
   return updateQueueEntryStatus(id, "archived", { archivedReason: reason });
 }
