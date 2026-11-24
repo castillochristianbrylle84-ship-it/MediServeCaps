@@ -1459,7 +1459,7 @@ export default function CustomerApp() {
                             queue was called to &quot;Get Ready&quot;. Your
                             queue number{" "}
                             {currentEntry.queueNumber.startsWith("PWD") ||
-                            currentEntry.queueNumber.startsWith("REG")
+                            currentEntry.queueNumber.startsWith("R")
                               ? currentEntry.queueNumber
                               : `#${currentEntry.queueNumber}`}{" "}
                             has been moved to archive. Please get a queue number
