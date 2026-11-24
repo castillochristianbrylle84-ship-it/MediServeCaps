@@ -103,9 +103,7 @@ function getActiveBatchForCustomer(
   if (group.length === 0) return undefined;
   if (group.length === 1) return group[0];
 
-  // group is ordered oldest-first (Old Stock first, New Stock after).
-  // While the Old Stock still has quantity > 0, always return the Old Stock
-  // so New Stock never appears in Medicine Availability until Old Stock hits 0.
+  // Keep the oldest batch as the one used for queue requests.
   const firstBatchWithStock = group.find((item) => item.stock > 0);
   if (firstBatchWithStock) {
     // If all older batches before this one have hit 0 quantity and this batch was waiting for old stock,
@@ -674,7 +672,20 @@ export default function CustomerApp() {
   }
 
   const customerMeds = getCustomerDisplayMedicines(medicines);
-  const searchedAvailableMeds = customerMeds.filter((med) => {
+  const customerStockBatches = [...medicines].sort((a, b) => {
+    const nameCompare = a.name
+      .trim()
+      .toLowerCase()
+      .localeCompare(b.name.trim().toLowerCase());
+    if (nameCompare !== 0) return nameCompare;
+    return Number(a.isNewStock === true) - Number(b.isNewStock === true);
+  });
+  const customerBatchCounts = new Map<string, number>();
+  customerStockBatches.forEach((med) => {
+    const key = med.name.trim().toLowerCase();
+    customerBatchCounts.set(key, (customerBatchCounts.get(key) ?? 0) + 1);
+  });
+  const searchedAvailableMeds = customerStockBatches.filter((med) => {
     const query = availableSearch.trim().toLowerCase();
     return (
       !query ||
@@ -794,7 +805,7 @@ export default function CustomerApp() {
                 <div className="grid max-h-[55vh] sm:max-h-96 gap-3 overflow-y-auto pr-1 overscroll-contain md:grid-cols-2">
                   {searchedAvailableMeds.length === 0 ? (
                     <p className="text-gray-500 text-center py-4">
-                      {customerMeds.length === 0
+                      {customerStockBatches.length === 0
                         ? "No medicines in inventory"
                         : "No medicines match your search"}
                     </p>
@@ -824,6 +835,19 @@ export default function CustomerApp() {
                                 <p className="text-sm text-gray-500 break-words">
                                   {med.type}
                                 </p>
+                                {(customerBatchCounts.get(
+                                  med.name.trim().toLowerCase(),
+                                ) ?? 0) > 1 && (
+                                  <span
+                                    className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                      med.isNewStock
+                                        ? "bg-blue-100 text-blue-800"
+                                        : "bg-emerald-100 text-emerald-800"
+                                    }`}
+                                  >
+                                    {med.isNewStock ? "New Stock" : "Old Stock"}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <span
