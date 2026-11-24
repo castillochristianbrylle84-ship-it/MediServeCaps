@@ -1868,7 +1868,7 @@ export default function AdminApp() {
                               </span>
                               {isPWD && (
                                 <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
-                                  PWD
+                                  Priority
                                 </span>
                               )}
                             </div>
