@@ -33,6 +33,48 @@ function formatQueueDisplay(num: string): string {
   return /^(PWD|REG|P|R)\d+$/i.test(num) ? num : `#${num}`;
 }
 
+const APPROACHING_QUEUE_OFFSET = 4; // 5th number starting from the processing entry (e.g. R006 -> R010)
+
+function parseQueueNumber(
+  queueNumber: string,
+): { prefix: string; number: number } | null {
+  const match = queueNumber.trim().match(/^([A-Za-z]*)(\d+)$/);
+  if (!match) return null;
+  const parsedNumber = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(parsedNumber)) return null;
+  return {
+    prefix: match[1].toUpperCase(),
+    number: parsedNumber,
+  };
+}
+
+function findApproachingQueueEntry(
+  processingEntry: QueueEntry,
+  allEntries: QueueEntry[],
+): QueueEntry | null {
+  const currentParsed = parseQueueNumber(processingEntry.queueNumber);
+  if (!currentParsed) return null;
+  const targetNumber = currentParsed.number + APPROACHING_QUEUE_OFFSET;
+
+  return (
+    allEntries.find((candidate) => {
+      if (candidate.id === processingEntry.id) return false;
+      if (candidate.patientType !== processingEntry.patientType) return false;
+      if (candidate.status !== "waiting") return false;
+      const candidateParsed = parseQueueNumber(candidate.queueNumber);
+      if (!candidateParsed) return false;
+      if (
+        currentParsed.prefix &&
+        candidateParsed.prefix &&
+        currentParsed.prefix !== candidateParsed.prefix
+      ) {
+        return false;
+      }
+      return candidateParsed.number === targetNumber;
+    }) ?? null
+  );
+}
+
 function formatRemainingTime(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(totalSec / 60);
@@ -685,6 +727,34 @@ export default function AdminApp() {
   }
 
   // ─── Queue actions ────────────────────────────────────────────────────────
+  async function sendQueueSms(phoneNumber: string, message: string) {
+    if (!user) throw new Error("Admin session is unavailable.");
+    const token = await user.getIdToken();
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!apiBaseUrl && process.env.NEXT_PUBLIC_ADMIN_STATIC === "true") {
+      throw new Error(
+        "Set VITE_API_BASE_URL for the standalone Admin deployment.",
+      );
+    }
+    const smsUrl = apiBaseUrl
+      ? `${apiBaseUrl.replace(/\/$/, "")}/api/sms`
+      : "/api/sms";
+    const response = await fetch(smsUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        phoneNumber,
+        message,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`SMS API returned HTTP ${response.status}.`);
+    }
+  }
+
   async function handleUpdateStatus(id: string, status: QueueEntry["status"]) {
     if (updatingQueueIds.has(id)) return;
     if (status === "getready" && getReadyEntry && getReadyEntry.id !== id) {
@@ -713,6 +783,37 @@ export default function AdminApp() {
       });
     }
 
+    if (status === "processing" && entry && entry.status !== "processing") {
+      const targetEntry = findApproachingQueueEntry(entry, entries);
+      if (!targetEntry) {
+        showToast(`Status updated to ${STATUS_CONFIG[status].label}`);
+        return;
+      }
+      if (!targetEntry.phone) {
+        showToast(
+          `${entry.queueNumber} is now Processing; ${targetEntry.queueNumber} has no phone number registered`,
+        );
+        return;
+      }
+
+      try {
+        await sendQueueSms(
+          targetEntry.phone,
+          `Queue number ${entry.queueNumber} is now in processing. Please prepare — your turn is approaching.`,
+        );
+        showToast(
+          `${entry.queueNumber} marked as Processing; SMS sent to ${targetEntry.queueNumber}`,
+        );
+      } catch (error) {
+        console.error("Could not send approaching-turn SMS:", error);
+        showToast(
+          `Status updated, but SMS to ${targetEntry.queueNumber} could not be sent`,
+          "error",
+        );
+      }
+      return;
+    }
+
     if (status !== "getready" || !entry || entry.status === "getready") {
       showToast(`Status updated to ${STATUS_CONFIG[status].label}`);
       return;
@@ -725,30 +826,10 @@ export default function AdminApp() {
     }
 
     try {
-      if (!user) throw new Error("Admin session is unavailable.");
-      const token = await user.getIdToken();
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
-      if (!apiBaseUrl && process.env.NEXT_PUBLIC_ADMIN_STATIC === "true") {
-        throw new Error(
-          "Set VITE_API_BASE_URL for the standalone Admin deployment.",
-        );
-      }
-      const smsUrl = apiBaseUrl
-        ? `${apiBaseUrl.replace(/\/$/, "")}/api/sms`
-        : "/api/sms";
-      const response = await fetch(smsUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          phoneNumber: entry.phone,
-          message: `Hello ${entry.patientName} (Queue ${entry.queueNumber}), YOUR MEDICINE IS READY! Please proceed to the counter within 15 minutes.`,
-        }),
-      });
-      if (!response.ok)
-        throw new Error(`SMS API returned HTTP ${response.status}.`);
+      await sendQueueSms(
+        entry.phone,
+        `Hello ${entry.patientName} (Queue ${entry.queueNumber}), YOUR MEDICINE IS READY! Please proceed to the counter within 15 minutes.`,
+      );
       showToast(`${entry.patientName} marked as Get Ready; SMS sent`);
     } catch (error) {
       console.error("Could not send queue-ready SMS:", error);
