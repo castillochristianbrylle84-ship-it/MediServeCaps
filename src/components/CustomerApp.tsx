@@ -2058,7 +2058,7 @@ export default function CustomerApp() {
                 Queue{" "}
                 <span className="font-bold text-gray-900">
                   {queueNoticeModal.queueNumber.startsWith("PWD") ||
-                  queueNoticeModal.queueNumber.startsWith("REG")
+                  queueNoticeModal.queueNumber.startsWith("R")
                     ? queueNoticeModal.queueNumber
                     : `#${queueNoticeModal.queueNumber}`}
                 </span>{" "}
