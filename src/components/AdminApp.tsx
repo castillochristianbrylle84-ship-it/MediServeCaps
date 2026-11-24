@@ -517,7 +517,8 @@ export default function AdminApp() {
   const [medicineTypeFilter, setMedicineTypeFilter] = useState("all");
   const alertedLowStockIds = useRef(new Set<string>());
   const alertedExpiryKeys = useRef(new Set<string>());
-  const replacingZeroStockIds = useRef(new Set<string>());
+  const activatingNewStockIds = useRef(new Set<string>());
+  const prevStockQuantities = useRef(new Map<string, number>());
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("daily");
   const [reportCategory, setReportCategory] = useState("all");
   const [reportMedicine, setReportMedicine] = useState("all");
@@ -717,7 +718,9 @@ export default function AdminApp() {
     });
   }, [medicines, showToast]);
 
-  // Automatically replace 0-quantity old stock when a new stock of the same medicine exists
+  // Automatically manage Old Stock -> New Stock availability transition:
+  // 1. When a New Stock exists alongside an Old Stock that still has quantity > 0, New Stock stays Unavailable.
+  // 2. As soon as Old Stock hits 0 quantity, New Stock automatically becomes Available.
   useEffect(() => {
     if (!medicines.length) return;
 
@@ -731,32 +734,56 @@ export default function AdminApp() {
 
     groups.forEach((group) => {
       if (group.length <= 1) return;
-      group.forEach((batch, index) => {
-        const hasReplacement = group.some(
-          (other, otherIdx) =>
-            other.id !== batch.id && (other.stock > 0 || otherIdx > index),
+
+      const oldBatches = group.filter(
+        (item) => getStockBatchInfo(item, medicines).role === "old",
+      );
+      const newBatches = group.filter(
+        (item) => getStockBatchInfo(item, medicines).role === "new",
+      );
+
+      const anyOldStockHasQuantity = oldBatches.some((b) => b.stock > 0);
+      const oldStockJustHitZero = oldBatches.some((b) => {
+        const prev = prevStockQuantities.current.get(b.id);
+        return prev !== undefined && prev > 0 && b.stock === 0;
+      });
+      const anyNewStockAvailable = newBatches.some((b) =>
+        isStockItemAvailable(b),
+      );
+
+      // If Old Stock is at 0 quantity and no New Stock is available yet, automatically make the first New Stock with quantity > 0 available
+      if (!anyOldStockHasQuantity && !anyNewStockAvailable) {
+        const candidateNewBatch = newBatches.find(
+          (b) =>
+            b.stock > 0 &&
+            (b.waitingForOldStock === true || oldStockJustHitZero),
         );
         if (
-          batch.stock <= 0 &&
-          hasReplacement &&
-          !replacingZeroStockIds.current.has(batch.id)
+          candidateNewBatch &&
+          !activatingNewStockIds.current.has(candidateNewBatch.id)
         ) {
-          replacingZeroStockIds.current.add(batch.id);
-          deleteStockItem(batch.id)
+          activatingNewStockIds.current.add(candidateNewBatch.id);
+          setStockItemAvailability(candidateNewBatch.id, true)
             .then(() => {
               showToast(
-                `Old stock of ${batch.name} reached 0 — replaced by new stock`,
+                `Old stock of ${candidateNewBatch.name} reached 0 — New stock is now automatically Available!`,
               );
             })
             .catch((error) => {
-              console.error("Could not remove 0-quantity old stock:", error);
+              console.error("Could not auto-activate new stock:", error);
             })
             .finally(() => {
-              replacingZeroStockIds.current.delete(batch.id);
+              activatingNewStockIds.current.delete(candidateNewBatch.id);
             });
         }
-      });
+      }
     });
+
+    const nextMap = new Map<string, number>();
+    medicines.forEach((med) => {
+      nextMap.set(med.id, med.stock);
+    });
+    prevStockQuantities.current = nextMap;
   }, [medicines, showToast]);
 
   useEffect(() => {
@@ -1000,11 +1027,38 @@ export default function AdminApp() {
         available: medForm.stock > 0,
       };
       if (editingMed) {
+        const wasPositive = editingMed.stock > 0;
         await updateStockItem(editingMed.id, medicineData);
-        showToast("Medicine updated successfully");
+        if (
+          wasPositive &&
+          medForm.stock === 0 &&
+          medicines.some(
+            (m) =>
+              m.id !== editingMed.id &&
+              normalizeMedName(m.name) === normalizeMedName(medForm.name) &&
+              m.stock > 0,
+          )
+        ) {
+          showToast(
+            `Old stock of ${medForm.name} reached 0 — New stock is now automatically Available!`,
+          );
+        } else {
+          showToast("Medicine updated successfully");
+        }
       } else {
+        const hasActiveOldBatch = medicines.some(
+          (m) =>
+            normalizeMedName(m.name) === normalizeMedName(medForm.name) &&
+            m.stock > 0,
+        );
         await addStockItem(medicineData);
-        showToast("Medicine added successfully");
+        if (hasActiveOldBatch) {
+          showToast(
+            `New stock of ${medForm.name} added as Unavailable — will automatically become Available when Old Stock reaches 0`,
+          );
+        } else {
+          showToast("Medicine added successfully");
+        }
       }
       setMedModalOpen(false);
     } catch (error) {
@@ -1024,8 +1078,20 @@ export default function AdminApp() {
       showToast("Restock this medicine before marking it available", "error");
       return;
     }
+    const batchInfo = getStockBatchInfo(med, medicines);
+    const hasActiveOldStock =
+      batchInfo.role === "new" &&
+      medicines.some(
+        (other) =>
+          other.id !== med.id &&
+          normalizeMedName(other.name) === normalizeMedName(med.name) &&
+          getStockBatchInfo(other, medicines).role === "old" &&
+          other.stock > 0,
+      );
     try {
-      await setStockItemAvailability(med.id, !currentlyAvailable);
+      await setStockItemAvailability(med.id, !currentlyAvailable, {
+        waitingForOldStock: currentlyAvailable && hasActiveOldStock,
+      });
       showToast(
         currentlyAvailable
           ? "Medicine marked unavailable"

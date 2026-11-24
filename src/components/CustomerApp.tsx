@@ -97,6 +97,39 @@ function isLowStock(stock: number): boolean {
   return stock <= LOW_STOCK_THRESHOLD;
 }
 
+function findPreferredMedicine(
+  items: StockItem[],
+  name: string,
+): StockItem | undefined {
+  const key = name.trim().toLowerCase();
+  const matches = items.filter((item) => item.name.trim().toLowerCase() === key);
+  if (matches.length === 0) return undefined;
+  return (
+    matches.find((item) => isStockItemAvailable(item)) ??
+    matches.find((item) => item.stock > 0) ??
+    matches[0]
+  );
+}
+
+function getCustomerDisplayMedicines(items: StockItem[]): StockItem[] {
+  const grouped = new Map<string, StockItem[]>();
+  items.forEach((item) => {
+    const key = item.name.trim().toLowerCase();
+    const list = grouped.get(key) ?? [];
+    list.push(item);
+    grouped.set(key, list);
+  });
+  const result: StockItem[] = [];
+  grouped.forEach((group) => {
+    const preferred =
+      group.find((item) => isStockItemAvailable(item)) ??
+      group.find((item) => item.stock > 0) ??
+      group[0];
+    if (preferred) result.push(preferred);
+  });
+  return result;
+}
+
 function apiEndpoint(path: string): string {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
   return apiBaseUrl ? new URL(path, apiBaseUrl).toString() : path;
@@ -239,7 +272,7 @@ export default function CustomerApp() {
     setForm((prev) => {
       let changed = false;
       const selectedMedicines = prev.selectedMedicines.flatMap((selected) => {
-        const medicine = medicines.find((item) => item.name === selected.name);
+        const medicine = findPreferredMedicine(medicines, selected.name);
         if (!medicine || !isStockItemAvailable(medicine)) {
           changed = true;
           return [];
@@ -316,8 +349,9 @@ export default function CustomerApp() {
     try {
       const latestStockItems = await getStockItems();
       const unavailableMedicine = form.selectedMedicines.find((selected) => {
-        const medicine = latestStockItems.find(
-          (item) => item.name === selected.name,
+        const medicine = findPreferredMedicine(
+          latestStockItems,
+          selected.name,
         );
         return (
           !medicine ||
@@ -326,8 +360,9 @@ export default function CustomerApp() {
         );
       });
       if (unavailableMedicine) {
-        const latestMedicine = latestStockItems.find(
-          (item) => item.name === unavailableMedicine.name,
+        const latestMedicine = findPreferredMedicine(
+          latestStockItems,
+          unavailableMedicine.name,
         );
         showToast(
           !latestMedicine || !isStockItemAvailable(latestMedicine)
@@ -453,7 +488,7 @@ export default function CustomerApp() {
 
   // ─── Medicine selection helpers ────────────────────────────────────────────
   function toggleMedicine(name: string) {
-    const medicine = medicines.find((item) => item.name === name);
+    const medicine = findPreferredMedicine(medicines, name);
     const exists = form.selectedMedicines.some((item) => item.name === name);
     if (!exists && (!medicine || !isStockItemAvailable(medicine))) {
       showToast(`${name} is unavailable`, "error");
@@ -471,7 +506,7 @@ export default function CustomerApp() {
   }
 
   function updateQty(name: string, qty: number, showLimitWarning = false) {
-    const medicine = medicines.find((item) => item.name === name);
+    const medicine = findPreferredMedicine(medicines, name);
     if (!medicine || !isStockItemAvailable(medicine)) {
       showToast(`${name} is unavailable`, "error");
       return;
@@ -618,7 +653,7 @@ export default function CustomerApp() {
     }
   }
 
-  const customerMeds = medicines;
+  const customerMeds = getCustomerDisplayMedicines(medicines);
   const searchedAvailableMeds = customerMeds.filter((med) => {
     const query = availableSearch.trim().toLowerCase();
     return (

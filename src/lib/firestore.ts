@@ -40,6 +40,7 @@ export interface StockItem {
   available: boolean;
   manualUnavailable?: boolean;
   isNewStock?: boolean;
+  waitingForOldStock?: boolean;
   genericName?: string;
   dosageStrength?: string;
   dosageForm?: string;
@@ -174,6 +175,7 @@ function toStockItem(id: string, data: DocumentData): StockItem {
     stock,
     manualUnavailable,
     isNewStock: data.isNewStock === true,
+    waitingForOldStock: data.waitingForOldStock === true,
     available: stock > 0 && data.available === true && !manualUnavailable,
   } as StockItem;
 }
@@ -185,7 +187,7 @@ export function isStockItemAvailable(item: StockItem): boolean {
 export async function getStockItems(): Promise<StockItem[]> {
   const snap = await getDocs(collection(db, "stock"));
   return sortStockItemsOldestFirst(
-    snap.docs.map((d) => toStockItem(d.id, d.data()))
+    snap.docs.map((d) => toStockItem(d.id, d.data())),
   );
 }
 
@@ -195,8 +197,8 @@ export function subscribeStockItems(
   return onSnapshot(collection(db, "stock"), (snap) => {
     cb(
       sortStockItemsOldestFirst(
-        snap.docs.map((d) => toStockItem(d.id, d.data()))
-      )
+        snap.docs.map((d) => toStockItem(d.id, d.data())),
+      ),
     );
   });
 }
@@ -215,6 +217,7 @@ export async function addStockItem(
   });
 
   const isReplacementOrAdditionalStock = sameMedicineDocs.length > 0;
+  let hasActiveOldStock = false;
 
   for (const existingDoc of sameMedicineDocs) {
     const existingData = existingDoc.data();
@@ -223,26 +226,41 @@ export async function addStockItem(
       Number.isFinite(existingData.stock)
         ? Math.max(0, existingData.stock)
         : 0;
-    if (existingQty <= 0) {
-      await deleteDoc(doc(db, "stock", existingDoc.id));
+    if (existingQty > 0) {
+      hasActiveOldStock = true;
+      if (existingData.isNewStock === true) {
+        await updateDoc(doc(db, "stock", existingDoc.id), {
+          isNewStock: false,
+          waitingForOldStock: false,
+          updatedAt: serverTimestamp(),
+        });
+      }
     } else if (existingData.isNewStock === true) {
       await updateDoc(doc(db, "stock", existingDoc.id), {
         isNewStock: false,
+        waitingForOldStock: false,
         updatedAt: serverTimestamp(),
       });
     }
   }
 
+  const cleanStock = Number.isFinite(item.stock) ? Math.max(0, item.stock) : 0;
+  // When adding a new stock of the same medicine while old stock still has quantity > 0,
+  // automatically set the new stock to Unavailable until old stock hits 0.
+  const autoUnavailable = isReplacementOrAdditionalStock && hasActiveOldStock;
+  const manualUnavailable = autoUnavailable
+    ? true
+    : item.manualUnavailable === true;
+  const available =
+    cleanStock > 0 && !manualUnavailable && (autoUnavailable ? false : item.available);
+
   const ref = await addDoc(collection(db, "stock"), {
     ...item,
-    stock: Number.isFinite(item.stock) ? Math.max(0, item.stock) : 0,
-    manualUnavailable: item.manualUnavailable === true,
+    stock: cleanStock,
+    manualUnavailable,
     isNewStock: isReplacementOrAdditionalStock,
-    available:
-      item.stock > 0 &&
-      Number.isFinite(item.stock) &&
-      item.available &&
-      item.manualUnavailable !== true,
+    waitingForOldStock: autoUnavailable,
+    available,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -293,24 +311,37 @@ export async function updateStockItem(
       ...data,
       stock,
       manualUnavailable,
+      ...(stock === 0 ? { waitingForOldStock: false } : {}),
       available: stock > 0 && !manualUnavailable,
       updatedAt: serverTimestamp(),
     });
   });
 
+  // When old stock hits 0 quantity, automatically make the new stock of the same medicine available
   if (resultingStock === 0 && resultingName) {
     const normalizedName = normalizeMedicineName(resultingName);
     const allSnap = await getDocs(collection(db, "stock"));
-    const otherBatches = allSnap.docs.filter((d) => {
-      if (d.id === id) return false;
-      const dData = d.data();
-      return (
-        typeof dData.name === "string" &&
-        normalizeMedicineName(dData.name) === normalizedName
+    const sameMedItems = sortStockItemsOldestFirst(
+      allSnap.docs
+        .map((d) => toStockItem(d.id, d.data()))
+        .filter((item) => normalizeMedicineName(item.name) === normalizedName)
+    );
+    const hasAnotherAvailable = sameMedItems.some(
+      (item) => item.id !== id && isStockItemAvailable(item)
+    );
+    if (!hasAnotherAvailable) {
+      const nextBatchWithStock = sameMedItems.find(
+        (item) => item.id !== id && item.stock > 0
       );
-    });
-    if (otherBatches.length > 0) {
-      await deleteDoc(stockRef);
+      if (nextBatchWithStock) {
+        await updateDoc(doc(db, "stock", nextBatchWithStock.id), {
+          available: true,
+          manualUnavailable: false,
+          waitingForOldStock: false,
+          isNewStock: true,
+          updatedAt: serverTimestamp(),
+        });
+      }
     }
   }
 }
@@ -318,6 +349,7 @@ export async function updateStockItem(
 export async function setStockItemAvailability(
   id: string,
   available: boolean,
+  options?: { waitingForOldStock?: boolean },
 ): Promise<void> {
   const stockRef = doc(db, "stock", id);
   await runTransaction(db, async (transaction) => {
@@ -336,6 +368,9 @@ export async function setStockItemAvailability(
     transaction.update(stockRef, {
       manualUnavailable: !available,
       available,
+      waitingForOldStock: available
+        ? false
+        : (options?.waitingForOldStock ?? false),
       updatedAt: serverTimestamp(),
     });
   });
@@ -353,35 +388,56 @@ export async function deductStock(
   const snap = await getDocs(collection(db, "stock"));
   const matchingDocs = sortStockItemsOldestFirst(
     snap.docs
-      .map((d) => ({ id: d.id, ...(d.data() as Omit<StockItem, "id">) }))
-      .filter(
-        (d) =>
-          typeof d.name === "string" &&
-          normalizeMedicineName(d.name) === normalizedTarget
-      )
+      .map((d) => toStockItem(d.id, d.data()))
+      .filter((d) => normalizeMedicineName(d.name) === normalizedTarget)
   );
 
   let remainingToDeduct = qty;
+  let oldStockHitZero = false;
+
   for (let i = 0; i < matchingDocs.length; i++) {
     if (remainingToDeduct <= 0) break;
     const d = matchingDocs[i];
-    const currentStock =
-      typeof d.stock === "number" && Number.isFinite(d.stock)
-        ? Math.max(0, d.stock)
-        : 0;
-    const deducted = Math.min(currentStock, remainingToDeduct);
-    const newStock = Math.max(0, currentStock - deducted);
+    if (d.stock <= 0) continue;
+
+    const deducted = Math.min(d.stock, remainingToDeduct);
+    const newStock = Math.max(0, d.stock - deducted);
     remainingToDeduct -= deducted;
 
-    const hasReplacementBatch = matchingDocs.length > 1 && i < matchingDocs.length - 1;
-    if (newStock === 0 && hasReplacementBatch) {
-      await deleteDoc(doc(db, "stock", d.id));
-    } else {
-      await updateDoc(doc(db, "stock", d.id), {
-        stock: newStock,
-        ...(newStock === 0 ? { available: false } : {}),
-        updatedAt: serverTimestamp(),
-      });
+    if (newStock === 0) {
+      oldStockHitZero = true;
+    }
+
+    await updateDoc(doc(db, "stock", d.id), {
+      stock: newStock,
+      ...(newStock === 0
+        ? { available: false, waitingForOldStock: false }
+        : {}),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  if (oldStockHitZero) {
+    const refreshedSnap = await getDocs(collection(db, "stock"));
+    const refreshedItems = sortStockItemsOldestFirst(
+      refreshedSnap.docs
+        .map((d) => toStockItem(d.id, d.data()))
+        .filter((d) => normalizeMedicineName(d.name) === normalizedTarget)
+    );
+    const anyAvailable = refreshedItems.some((item) =>
+      isStockItemAvailable(item)
+    );
+    if (!anyAvailable) {
+      const nextWithStock = refreshedItems.find((item) => item.stock > 0);
+      if (nextWithStock) {
+        await updateDoc(doc(db, "stock", nextWithStock.id), {
+          available: true,
+          manualUnavailable: false,
+          waitingForOldStock: false,
+          isNewStock: true,
+          updatedAt: serverTimestamp(),
+        });
+      }
     }
   }
 }
@@ -835,9 +891,15 @@ export async function updateQueueEntryStatus(
         id: d.id,
         doc: d,
         isNewStock: d.data().isNewStock === true,
-        createdAt: d.data().createdAt instanceof Timestamp ? d.data().createdAt : undefined,
-        receivedDate: typeof d.data().receivedDate === "string" ? d.data().receivedDate : undefined,
-      }))
+        createdAt:
+          d.data().createdAt instanceof Timestamp
+            ? d.data().createdAt
+            : undefined,
+        receivedDate:
+          typeof d.data().receivedDate === "string"
+            ? d.data().receivedDate
+            : undefined,
+      })),
     ).map((item) => item.doc);
     stockDocsByName.set(key, sorted);
   }
@@ -893,51 +955,77 @@ export async function updateQueueEntryStatus(
               ref,
               snapshot: await transaction.get(ref),
             };
-          })
+          }),
         );
         return { quantity, snapshots };
-      })
+      }),
     );
 
     stockDeductionGroups.forEach(({ quantity, snapshots }) => {
       const existingSnapshots = snapshots.filter((s) => s.snapshot.exists());
       let remaining = quantity;
+      let oldBatchDepleted = false;
+      const finalStocks: number[] = [];
 
-      existingSnapshots.forEach(({ ref, snapshot: stockCurrent }, idx) => {
+      existingSnapshots.forEach(({ ref, snapshot: stockCurrent }) => {
         const stockData = stockCurrent.data()!;
         const currentStock =
-          typeof stockData.stock === "number" && Number.isFinite(stockData.stock)
+          typeof stockData.stock === "number" &&
+          Number.isFinite(stockData.stock)
             ? Math.max(0, stockData.stock)
             : 0;
+
+        if (currentStock <= 0 || remaining <= 0) {
+          finalStocks.push(currentStock);
+          return;
+        }
+
         const deductAmount = Math.min(currentStock, remaining);
         const newStock = Math.max(0, currentStock - deductAmount);
         remaining -= deductAmount;
+        finalStocks.push(newStock);
 
-        const hasNewerReplacement =
-          existingSnapshots.length > 1 && idx < existingSnapshots.length - 1;
+        if (currentStock > 0 && newStock === 0) {
+          oldBatchDepleted = true;
+        }
 
-        if (newStock === 0 && hasNewerReplacement) {
-          transaction.delete(ref);
-        } else if (deductAmount > 0 || newStock === 0) {
-          transaction.update(ref, {
-            stock: newStock,
-            manualUnavailable:
-              stockData.manualUnavailable === true ||
-              (stockData.manualUnavailable === undefined &&
-                stockData.available === false &&
-                currentStock > 0),
-            available:
-              newStock > 0 &&
-              stockData.manualUnavailable !== true &&
-              !(
-                stockData.manualUnavailable === undefined &&
-                stockData.available === false &&
-                currentStock > 0
-              ),
+        transaction.update(ref, {
+          stock: newStock,
+          manualUnavailable:
+            stockData.manualUnavailable === true ||
+            (stockData.manualUnavailable === undefined &&
+              stockData.available === false &&
+              currentStock > 0),
+          ...(newStock === 0 ? { waitingForOldStock: false } : {}),
+          available:
+            newStock > 0 &&
+            stockData.manualUnavailable !== true &&
+            !(
+              stockData.manualUnavailable === undefined &&
+              stockData.available === false &&
+              currentStock > 0
+            ),
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      // If an older batch hit 0 during this serve transaction, automatically make the next batch with stock > 0 available
+      if (oldBatchDepleted && existingSnapshots.length > 1) {
+        const nextIdx = existingSnapshots.findIndex(
+          (_, idx) => finalStocks[idx] > 0
+        );
+        if (nextIdx !== -1) {
+          const nextBatch = existingSnapshots[nextIdx];
+          transaction.update(nextBatch.ref, {
+            stock: finalStocks[nextIdx],
+            available: true,
+            manualUnavailable: false,
+            waitingForOldStock: false,
+            isNewStock: true,
             updatedAt: serverTimestamp(),
           });
         }
-      });
+      }
     });
 
     transaction.update(customerRef, servedUpdate);
