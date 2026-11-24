@@ -1862,7 +1862,7 @@ export default function AdminApp() {
                           <div className="flex items-start justify-between gap-2 mb-3">
                             <div className="min-w-0">
                               <span
-                                className={`break-words text-2xl font-black ${isPWD ? "text-blue-700" : "text-emerald-700"}`}
+                                className={`break-words text-2xl font-black ${isPWD ? "text-blue-800" : "text-emerald-700"}`}
                               >
                                 {entry.queueNumber}
                               </span>

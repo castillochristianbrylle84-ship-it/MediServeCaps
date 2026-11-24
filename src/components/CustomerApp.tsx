@@ -899,7 +899,7 @@ export default function CustomerApp() {
                             <p
                               className={`text-3xl font-black ${
                                 isArchived
-                                  ? "text-blue-300"
+                                  ? "text-blue-700"
                                   : entry.patientType === "pwd"
                                     ? "text-blue-700"
                                     : "text-[#166534]"
