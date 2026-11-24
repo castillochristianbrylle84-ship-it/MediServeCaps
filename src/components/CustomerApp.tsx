@@ -1458,7 +1458,7 @@ export default function CustomerApp() {
                             You did not show up within 15 minutes when your
                             queue was called to &quot;Get Ready&quot;. Your
                             queue number{" "}
-                            {currentEntry.queueNumber.startsWith("PWD") ||
+                            {currentEntry.queueNumber.startsWith("P") ||
                             currentEntry.queueNumber.startsWith("R")
                               ? currentEntry.queueNumber
                               : `#${currentEntry.queueNumber}`}{" "}
@@ -2057,7 +2057,7 @@ export default function CustomerApp() {
               <p className="text-gray-600 text-sm leading-relaxed">
                 Queue{" "}
                 <span className="font-bold text-gray-900">
-                  {queueNoticeModal.queueNumber.startsWith("PWD") ||
+                  {queueNoticeModal.queueNumber.startsWith("P") ||
                   queueNoticeModal.queueNumber.startsWith("R")
                     ? queueNoticeModal.queueNumber
                     : `#${queueNoticeModal.queueNumber}`}

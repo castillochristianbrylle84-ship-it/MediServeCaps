@@ -72,14 +72,17 @@ function compareQueueOrder(left, right) {
 }
 
 /**
- * Extracts the prefix ("PWD"/"REG") and sequence number from a formatted
- * queue number string like "PWD001" or "REG010".
+ * Extracts the queue type and sequence number from a formatted queue number.
  * Returns null for legacy bare-number strings.
  */
 function parseQueueNumber(queueNumber) {
-  const match = String(queueNumber ?? "").match(/^(PWD|REG)(\d+)$/i);
+  const match = String(queueNumber ?? "").match(/^(PWD|REG|P|R)(\d+)$/i);
   if (!match) return null;
-  return { prefix: match[1].toUpperCase(), seq: parseInt(match[2], 10) };
+  const prefix = match[1].toUpperCase();
+  return {
+    prefix: prefix === "P" || prefix === "PWD" ? "P" : "R",
+    seq: parseInt(match[2], 10),
+  };
 }
 
 async function findPreviousDayTickets(queueDate, start, end) {
@@ -307,7 +310,7 @@ export const notifyQueueAdvance = onDocumentUpdated(
       return;
     }
 
-    // Parse the ongoing queue number to extract prefix + sequence (e.g. "REG006" → { prefix: "REG", seq: 6 })
+    // Parse the ongoing queue number to extract type + sequence (e.g. "R006" → { prefix: "R", seq: 6 })
     const ongoingParsed = parseQueueNumber(ongoingQueueNumber);
 
     const recipients = activeEntries.filter((entry) => {

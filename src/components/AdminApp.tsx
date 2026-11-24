@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
 const CUSTOMER_APP_URL = process.env.NEXT_PUBLIC_CUSTOMER_URL || "/customer";
 
 function formatQueueDisplay(num: string): string {
-  return num.startsWith("PWD") || num.startsWith("REG") ? num : `#${num}`;
+  return /^(PWD|REG|P|R)\d+$/i.test(num) ? num : `#${num}`;
 }
 
 function formatRemainingTime(ms: number): string {
